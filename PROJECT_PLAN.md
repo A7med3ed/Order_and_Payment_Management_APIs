@@ -882,24 +882,26 @@ Recovery note: if the process dies between TX 1 and TX 2, the payment stays `pen
 **Goal:** the two foundations that the payment flow depends on.
 
 **Ledger**
-- [ ] Migration `ledger_entries` (section 6.2) + MySQL triggers (guarded by driver) + indexes.
-- [ ] Enums `LedgerEntryType`, `LedgerDirection`. `LedgerEntryData` DTO.
-- [ ] `LedgerEntry` model (immutable guards), `LedgerHasher`, `LedgerService` (implements `LedgerRecorderInterface` and `LedgerReaderInterface`, locks the chain per order), `LedgerVerifier`, `VerifyLedgerCommand`.
-- [ ] Read-only controller, resource, routes (`/orders/{order}/ledger`, `/payments/{payment}/ledger`). The ownership check goes through contracts (`OrderReaderInterface`); wire the payment-ledger route in Sprint 4 if needed.
-- [ ] Tests:
-  - [ ] append creates correct `chain_sequence` and hash linkage
-  - [ ] updating or deleting an entry throws `ImmutableLedgerException`
-  - [ ] raw `query()->update()` / `delete()` is rejected by the DB trigger
-  - [ ] tampering with a row (via a test-only bypass such as dropping the trigger in the test) makes `ledger:verify` fail
-  - [ ] concurrent append keeps a gap-free sequence
+- [x] Migration `ledger_entries` (section 6.2) + MySQL triggers (guarded by driver) + indexes.
+- [x] Enums `LedgerEntryType`, `LedgerDirection`. `LedgerEntryData` DTO.
+- [x] `LedgerEntry` model (immutable guards), `LedgerHasher`, `LedgerService` (implements `LedgerRecorderInterface` and `LedgerReaderInterface`, locks the chain per order), `LedgerVerifier`, `VerifyLedgerCommand`.
+- [x] Read-only controller, resource, routes (`/orders/{order}/ledger`, `/payments/{payment}/ledger`). The ownership check goes through contracts (`OrderReaderInterface`); wire the payment-ledger route in Sprint 4 if needed.
+- [x] Tests:
+  - [x] append creates correct `chain_sequence` and hash linkage
+  - [x] updating or deleting an entry throws `ImmutableLedgerException`
+  - [x] raw `query()->update()` / `delete()` is rejected by the DB trigger
+  - [x] tampering with a row (via a test-only bypass such as dropping the trigger in the test) makes `ledger:verify` fail
+  - [x] concurrent append keeps a gap-free sequence
 
 **Idempotency**
-- [ ] Migration `idempotency_keys` (section 5.2), model, `IdempotencyStatus` enum, DTOs, `IdempotencyService`, `IdempotencyMiddleware` (alias `idempotent`).
-- [ ] Scheduled prune command for expired keys (`idempotency:prune`).
-- [ ] Tests using a dummy test route: new key, replay (same body + `Idempotent-Replayed` header), mismatch payload (422), in-progress (409), missing header (422), 5xx releases the key, validation error releases the key.
-- [ ] Document the Ledger endpoints in `Ledger/Docs` (tag `Ledger`, read-only, paginated) and make sure the `IdempotencyKey` header parameter and its behaviors are defined in `Shared/Docs`.
+- [x] Migration `idempotency_keys` (section 5.2), model, `IdempotencyStatus` enum, DTOs, `IdempotencyService`, `IdempotencyMiddleware` (alias `idempotent`).
+- [x] Scheduled prune command for expired keys (`idempotency:prune`).
+- [x] Tests using a dummy test route: new key, replay (same body + `Idempotent-Replayed` header), mismatch payload (422), in-progress (409), missing header (422), 5xx releases the key, validation error releases the key.
+- [x] Document the Ledger endpoints in `Ledger/Docs` (tag `Ledger`, read-only, paginated) and make sure the `IdempotencyKey` header parameter and its behaviors are defined in `Shared/Docs`.
 
 **DoD:** both pieces fully tested and decoupled from Orders/Payments code; `ledger:verify` runs clean.
+
+**Sprint 3 verification (2026-10-21):** Complete. Combined checks ran after both sprint implementations: 84 tests passed (329 assertions), Pint passed (154 files), OpenAPI export and all-route documentation/rate-limit checks passed, and `ledger:verify` is clean. Real MySQL concurrency, triggers, tampering, replay, TTL, and claim fencing are covered. Payment-scoped ledger routing is deferred to Sprint 4 as allowed above.
 
 ---
 

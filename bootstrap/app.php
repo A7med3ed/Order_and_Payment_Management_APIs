@@ -19,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->api(prepend: [ForceJsonResponse::class]);
+        $middleware->alias(['idempotent' => \App\Modules\Shared\Http\Middleware\IdempotencyMiddleware::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

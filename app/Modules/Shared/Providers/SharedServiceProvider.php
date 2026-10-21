@@ -17,5 +17,8 @@ final class SharedServiceProvider extends ModuleServiceProvider
     {
         parent::boot();
         $this->app->make(RateLimiters::class)->register();
+        $this->loadMigrationsFrom(dirname(__DIR__).'/Idempotency/Database/Migrations');
+        $this->commands([\App\Modules\Shared\Idempotency\Console\PruneIdempotencyCommand::class]);
+        \Illuminate\Support\Facades\Schedule::command('idempotency:prune')->hourly()->withoutOverlapping();
     }
 }

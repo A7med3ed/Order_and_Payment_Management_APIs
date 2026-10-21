@@ -21,6 +21,9 @@ final class ApiExceptionRenderer
         }
 
         $headers = $exception instanceof HttpExceptionInterface ? $exception->getHeaders() : [];
+        if ($exception instanceof ApiException) {
+            $headers = array_merge($headers, $exception->headers);
+        }
         $status = match (true) {
             $exception instanceof ApiException => $exception->httpStatus,
             $exception instanceof ValidationException => 422,

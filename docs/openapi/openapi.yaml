@@ -137,6 +137,544 @@ paths:
       security:
         -
           bearerAuth: []
+  '/api/orders/{order}/ledger':
+    get:
+      tags:
+        - Ledger
+      summary: 'Read an order financial history'
+      description: 'Owner-scoped and read-only. Entries are ordered by chain_sequence. Credits add to balance, debits subtract, memos have no balance effect. Payment-scoped history is introduced with Payments in Sprint 4.'
+      operationId: orderLedger
+      parameters:
+        -
+          $ref: '#/components/parameters/OrderId'
+        -
+          $ref: '#/components/parameters/Page'
+        -
+          $ref: '#/components/parameters/PerPage'
+      responses:
+        200:
+          description: 'Paginated immutable ledger entries.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerPage'
+              examples:
+                OrderHistory:
+                  value:
+                    data:
+                      -
+                        id: 01J00000000000000000000000
+                        order_id: 1
+                        payment_id: null
+                        chain_sequence: 1
+                        type: payment_initiated
+                        direction: memo
+                        amount: '39.98'
+                        currency: USD
+                        gateway: credit_card
+                        transaction_id: null
+                        idempotency_key: payment-request-001
+                        metadata:
+                          last4: '4242'
+                        previous_hash: null
+                        entry_hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                        created_at: '2026-10-21T00:00:00.000000Z'
+                    links:
+                      first: '/api/orders/1/ledger?page=1'
+                      last: '/api/orders/1/ledger?page=1'
+                      prev: null
+                      next: null
+                    meta:
+                      current_page: 1
+                      last_page: 1
+                      per_page: 15
+                      total: 1
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        404:
+          $ref: '#/components/responses/NotFound'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        -
+          bearerAuth: []
+  /api/orders:
+    get:
+      tags:
+        - Orders
+      summary: 'List and filter your orders'
+      description: 'Owner-scoped, newest first. per_page defaults to 15 and has a maximum of 100.'
+      operationId: listOrders
+      parameters:
+        -
+          $ref: '#/components/parameters/Page'
+        -
+          $ref: '#/components/parameters/PerPage'
+        -
+          name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - pending
+              - confirmed
+              - cancelled
+      responses:
+        200:
+          description: 'Successful order response.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPage'
+              examples:
+                listOrders:
+                  value:
+                    data:
+                      -
+                        id: 1
+                        user_id: 1
+                        customer_name: 'Jane Doe'
+                        customer_email: jane@example.com
+                        status: pending
+                        total_amount: '39.98'
+                        items:
+                          -
+                            id: 1
+                            product_name: Book
+                            quantity: 2
+                            price: '19.99'
+                        created_at: '2026-10-21T00:00:00.000000Z'
+                        updated_at: '2026-10-21T00:00:00.000000Z'
+                    links:
+                      first: '/api/orders?page=1'
+                      last: '/api/orders?page=1'
+                      prev: null
+                      next: null
+                    meta:
+                      current_page: 1
+                      last_page: 1
+                      per_page: 15
+                      total: 1
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        -
+          bearerAuth: []
+    post:
+      tags:
+        - Orders
+      summary: 'Place an order'
+      description: 'Totals and initial pending status are computed by the aggregate. Client total_amount, status, and user_id fields are ignored.'
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrder'
+            examples:
+              CreateOrder:
+                value:
+                  customer_name: 'Jane Doe'
+                  customer_email: jane@example.com
+                  items:
+                    -
+                      product_name: Book
+                      quantity: 2
+                      price: '19.99'
+      responses:
+        201:
+          description: 'Successful order response.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+              examples:
+                createOrder:
+                  value:
+                    data:
+                      id: 1
+                      user_id: 1
+                      customer_name: 'Jane Doe'
+                      customer_email: jane@example.com
+                      status: pending
+                      total_amount: '39.98'
+                      items:
+                        -
+                          id: 1
+                          product_name: Book
+                          quantity: 2
+                          price: '19.99'
+                      created_at: '2026-10-21T00:00:00.000000Z'
+                      updated_at: '2026-10-21T00:00:00.000000Z'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        -
+          bearerAuth: []
+  '/api/orders/{order}':
+    get:
+      tags:
+        - Orders
+      summary: 'Get an order'
+      description: 'Other users receive 404, matching missing resources.'
+      operationId: showOrder
+      parameters:
+        -
+          $ref: '#/components/parameters/OrderId'
+      responses:
+        200:
+          description: 'Successful order response.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+              examples:
+                showOrder:
+                  value:
+                    data:
+                      id: 1
+                      user_id: 1
+                      customer_name: 'Jane Doe'
+                      customer_email: jane@example.com
+                      status: pending
+                      total_amount: '39.98'
+                      items:
+                        -
+                          id: 1
+                          product_name: Book
+                          quantity: 2
+                          price: '19.99'
+                      created_at: '2026-10-21T00:00:00.000000Z'
+                      updated_at: '2026-10-21T00:00:00.000000Z'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        -
+          bearerAuth: []
+    put:
+      tags:
+        - Orders
+      summary: 'Update order details or items'
+      description: 'Only pending orders are editable. Provided items replace the entire item collection; omitted fields remain unchanged.'
+      operationId: replaceOrder
+      parameters:
+        -
+          $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrder'
+            examples:
+              UpdateOrder:
+                value:
+                  customer_name: 'Jane Doe'
+                  customer_email: jane@example.com
+                  items:
+                    -
+                      product_name: Book
+                      quantity: 2
+                      price: '19.99'
+      responses:
+        200:
+          description: 'Successful order response.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+              examples:
+                replaceOrder:
+                  value:
+                    data:
+                      id: 1
+                      user_id: 1
+                      customer_name: 'Jane Doe'
+                      customer_email: jane@example.com
+                      status: pending
+                      total_amount: '39.98'
+                      items:
+                        -
+                          id: 1
+                          product_name: Book
+                          quantity: 2
+                          price: '19.99'
+                      created_at: '2026-10-21T00:00:00.000000Z'
+                      updated_at: '2026-10-21T00:00:00.000000Z'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+        409:
+          description: 'Domain state conflict.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                OrderHasPayments:
+                  value:
+                    message: 'An order with payments cannot be deleted.'
+                    code: ORDER_HAS_PAYMENTS
+                InvalidTransition:
+                  value:
+                    message: 'Cannot change order status from cancelled to confirmed.'
+                    code: INVALID_STATUS_TRANSITION
+                OrderNotEditable:
+                  value:
+                    message: 'Only pending orders are editable.'
+                    code: ORDER_NOT_EDITABLE
+      security:
+        -
+          bearerAuth: []
+    delete:
+      tags:
+        - Orders
+      summary: 'Delete an order without payments'
+      description: 'Any existing payment, including failed attempts, blocks deletion. Until Payments is implemented, a temporary no-payments guard is bound.'
+      operationId: deleteOrder
+      parameters:
+        -
+          $ref: '#/components/parameters/OrderId'
+      responses:
+        204:
+          description: 'Order and its items deleted; no response body.'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+        409:
+          description: 'Domain state conflict.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                OrderHasPayments:
+                  value:
+                    message: 'An order with payments cannot be deleted.'
+                    code: ORDER_HAS_PAYMENTS
+                InvalidTransition:
+                  value:
+                    message: 'Cannot change order status from cancelled to confirmed.'
+                    code: INVALID_STATUS_TRANSITION
+                OrderNotEditable:
+                  value:
+                    message: 'Only pending orders are editable.'
+                    code: ORDER_NOT_EDITABLE
+      security:
+        -
+          bearerAuth: []
+    patch:
+      tags:
+        - Orders
+      summary: 'Partially update an order'
+      description: 'Only pending orders are editable. Provided items replace the complete item collection.'
+      operationId: updateOrder
+      parameters:
+        -
+          $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrder'
+            examples:
+              UpdateOrder:
+                value:
+                  customer_name: 'Jane Doe'
+                  customer_email: jane@example.com
+                  items:
+                    -
+                      product_name: Book
+                      quantity: 2
+                      price: '19.99'
+      responses:
+        200:
+          description: 'Successful order response.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+              examples:
+                updateOrder:
+                  value:
+                    data:
+                      id: 1
+                      user_id: 1
+                      customer_name: 'Jane Doe'
+                      customer_email: jane@example.com
+                      status: pending
+                      total_amount: '39.98'
+                      items:
+                        -
+                          id: 1
+                          product_name: Book
+                          quantity: 2
+                          price: '19.99'
+                      created_at: '2026-10-21T00:00:00.000000Z'
+                      updated_at: '2026-10-21T00:00:00.000000Z'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+        409:
+          description: 'Domain state conflict.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                OrderHasPayments:
+                  value:
+                    message: 'An order with payments cannot be deleted.'
+                    code: ORDER_HAS_PAYMENTS
+                InvalidTransition:
+                  value:
+                    message: 'Cannot change order status from cancelled to confirmed.'
+                    code: INVALID_STATUS_TRANSITION
+                OrderNotEditable:
+                  value:
+                    message: 'Only pending orders are editable.'
+                    code: ORDER_NOT_EDITABLE
+      security:
+        -
+          bearerAuth: []
+  '/api/orders/{order}/status':
+    patch:
+      tags:
+        - Orders
+      summary: 'Confirm or cancel an order'
+      description: 'Allowed transitions: pending to confirmed/cancelled; confirmed to cancelled only without successful payment. Cancelled is terminal.'
+      operationId: changeOrderStatus
+      parameters:
+        -
+          $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - pending
+                    - confirmed
+                    - cancelled
+              type: object
+            examples:
+              ConfirmOrder:
+                value:
+                  status: confirmed
+              CancelOrder:
+                value:
+                  status: cancelled
+      responses:
+        200:
+          description: 'Successful order response.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+              examples:
+                changeOrderStatus:
+                  value:
+                    data:
+                      id: 1
+                      user_id: 1
+                      customer_name: 'Jane Doe'
+                      customer_email: jane@example.com
+                      status: confirmed
+                      total_amount: '39.98'
+                      items:
+                        -
+                          id: 1
+                          product_name: Book
+                          quantity: 2
+                          price: '19.99'
+                      created_at: '2026-10-21T00:00:00.000000Z'
+                      updated_at: '2026-10-21T00:00:00.000000Z'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+        409:
+          description: 'Domain state conflict.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                OrderHasPayments:
+                  value:
+                    message: 'An order with payments cannot be deleted.'
+                    code: ORDER_HAS_PAYMENTS
+                InvalidTransition:
+                  value:
+                    message: 'Cannot change order status from cancelled to confirmed.'
+                    code: INVALID_STATUS_TRANSITION
+                OrderNotEditable:
+                  value:
+                    message: 'Only pending orders are editable.'
+                    code: ORDER_NOT_EDITABLE
+      security:
+        -
+          bearerAuth: []
   /api/documentation:
     get:
       tags:
@@ -250,6 +788,228 @@ components:
           type: string
           format: password
           writeOnly: true
+      type: object
+    LedgerEntry:
+      required:
+        - id
+        - order_id
+        - chain_sequence
+        - type
+        - direction
+        - amount
+        - currency
+        - entry_hash
+        - created_at
+      properties:
+        id:
+          type: string
+          example: 01J00000000000000000000000
+        order_id:
+          type: integer
+        payment_id:
+          type: integer
+          nullable: true
+        chain_sequence:
+          type: integer
+          minimum: 1
+        type:
+          type: string
+          enum:
+            - payment_initiated
+            - payment_succeeded
+            - payment_failed
+            - payment_reversed
+        direction:
+          type: string
+          enum:
+            - credit
+            - debit
+            - memo
+        amount:
+          type: string
+          example: '39.98'
+        currency:
+          type: string
+          example: USD
+        gateway:
+          type: string
+          nullable: true
+        transaction_id:
+          type: string
+          nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        previous_hash:
+          type: string
+          nullable: true
+        entry_hash:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      type: object
+    LedgerPage:
+      required:
+        - data
+        - links
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerEntry'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+      type: object
+    OrderItem:
+      required:
+        - id
+        - product_name
+        - quantity
+        - price
+      properties:
+        id:
+          type: integer
+          example: 1
+        product_name:
+          type: string
+          example: Book
+        quantity:
+          type: integer
+          example: 2
+          minimum: 1
+        price:
+          type: string
+          example: '19.99'
+      type: object
+    Order:
+      required:
+        - id
+        - user_id
+        - customer_name
+        - customer_email
+        - status
+        - total_amount
+        - items
+      properties:
+        id:
+          type: integer
+          example: 1
+        user_id:
+          type: integer
+          example: 1
+        customer_name:
+          type: string
+          example: 'Jane Doe'
+        customer_email:
+          type: string
+          format: email
+          example: jane@example.com
+        status:
+          type: string
+          example: pending
+          enum:
+            - pending
+            - confirmed
+            - cancelled
+        total_amount:
+          type: string
+          readOnly: true
+          example: '39.98'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      type: object
+    OrderResponse:
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Order'
+      type: object
+    OrderPage:
+      required:
+        - data
+        - links
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+      type: object
+    OrderItemInput:
+      required:
+        - product_name
+        - quantity
+        - price
+      properties:
+        product_name:
+          type: string
+          maxLength: 255
+        quantity:
+          type: integer
+          maximum: 4294967295
+          minimum: 1
+        price:
+          description: 'Non-negative decimal string; at most two decimal places and DECIMAL(12,2) capacity.'
+          type: string
+          pattern: '^\d+(\.\d{1,2})?$'
+          example: '19.99'
+      type: object
+    CreateOrder:
+      required:
+        - customer_name
+        - customer_email
+        - items
+      properties:
+        customer_name:
+          type: string
+          maxLength: 255
+        customer_email:
+          type: string
+          format: email
+          maxLength: 255
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItemInput'
+          maxItems: 1000
+          minItems: 1
+      type: object
+    UpdateOrder:
+      minProperties: 1
+      properties:
+        customer_name:
+          type: string
+          maxLength: 255
+        customer_email:
+          type: string
+          format: email
+          maxLength: 255
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItemInput'
+          maxItems: 1000
+          minItems: 1
       type: object
     ErrorResponse:
       required:
@@ -411,6 +1171,13 @@ components:
                 message: 'An unexpected error occurred.'
                 code: SERVER_ERROR
   parameters:
+    OrderId:
+      name: order
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
     Page:
       name: page
       in: query
@@ -444,6 +1211,12 @@ tags:
   -
     name: Authentication
     description: 'Register, log in, inspect the current user, and invalidate tokens.'
+  -
+    name: Orders
+    description: 'Owner-scoped order management (introduced in Sprint 2).'
+  -
+    name: Ledger
+    description: 'Read-only financial history (introduced in Sprint 3).'
   -
     name: Documentation
     description: 'Interactive API reference, enabled outside production by default.'
