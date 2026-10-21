@@ -14,6 +14,50 @@ are deterministic simulations; they do not move real money.
 | [Postman collection](docs/postman/collection.json) / [environment](docs/postman/local.environment.json) | Runnable walkthrough, saved success/error examples |
 | [Decisions](docs/DECISIONS.md) / [implementation plan](PROJECT_PLAN.md) | Tradeoffs, verification evidence and completed delivery checklist |
 
+## Task requirements checklist
+
+The supplied task requires a Laravel API with simulated payment processing. Use
+this checklist to locate each requirement and its verification.
+
+| Requirement | Delivered implementation / documentation | Verification |
+|---|---|---|
+| Create orders with customer details, items, and calculated totals | [Orders module](app/Modules/Orders), `POST /api/orders` | [Order feature tests](tests/Feature/Orders/OrdersTest.php), [aggregate tests](tests/Unit/Orders/OrderTest.php), [money tests](tests/Unit/Shared/MoneyTest.php) |
+| Update and delete orders; prevent deletion when any payment exists | `PUT/PATCH/DELETE /api/orders/{order}` | [Order tests](tests/Feature/Orders/OrdersTest.php), [payment tests](tests/Feature/Payments/PaymentsTest.php) |
+| List orders and filter pending/confirmed/cancelled statuses | `GET /api/orders?status=pending` | [Order tests](tests/Feature/Orders/OrdersTest.php) |
+| Simulate payments with id, order, status, and method; require confirmed orders | [Payments module](app/Modules/Payments), `POST /api/orders/{order}/payments` | [Payment feature tests](tests/Feature/Payments/PaymentsTest.php), [aggregate tests](tests/Unit/Payments/PaymentTest.php), [gateway tests](tests/Unit/Payments/GatewaysTest.php) |
+| Add gateways with minimal changes using a strategy pattern | [Gateway interface and registry](app/Modules/Payments/Gateways), [extension guide](#how-to-add-a-payment-gateway) | [Gateway registration tests](tests/Feature/Payments/GatewayManagerTest.php), [HTTP extensibility tests](tests/Feature/Payments/PaymentHardeningTest.php) |
+| Configure gateway keys/secrets through environment or database | [Gateway configuration](app/Modules/Payments/Config/payment.php), [.env.example](.env.example) | [Gateway registration tests](tests/Feature/Payments/GatewayManagerTest.php) |
+| Retrieve all accessible payments or payments for one order | `GET /api/payments`, `GET /api/orders/{order}/payments`, `GET /api/payments/{payment}` | [Payment tests](tests/Feature/Payments/PaymentsTest.php) |
+| RESTful methods/status codes and paginated lists | [API contract](docs/openapi/openapi.yaml), [error contract](#rate-limits-and-error-contract) | [Order tests](tests/Feature/Orders/OrdersTest.php), [payment tests](tests/Feature/Payments/PaymentsTest.php), [API error tests](tests/Feature/Shared/ApiErrorsTest.php) |
+| JWT authentication, registration, and login | [Auth module](app/Modules/Auth), `/api/auth/register`, `/api/auth/login` | [Authentication tests](tests/Feature/Auth/AuthenticationTest.php) |
+| Validate API inputs and return meaningful errors | Module Form Requests, aggregate invariants, JSON `message`/`code`/`errors` responses | [Authentication](tests/Feature/Auth/AuthenticationTest.php), [order](tests/Feature/Orders/OrdersTest.php), [payment](tests/Feature/Payments/PaymentsTest.php), and [error tests](tests/Feature/Shared/ApiErrorsTest.php) |
+| Export grouped API documentation with success/error examples | [Postman collection](docs/postman/collection.json), [environment](docs/postman/local.environment.json), [walkthrough](#postman-walkthrough), [OpenAPI](docs/openapi/openapi.yaml) | [Route/example/export checks](tests/Feature/Shared/DocumentationTest.php) |
+| Unit/feature tests, including payment gateway logic | [Unit tests](tests/Unit), [feature tests](tests/Feature), [test commands](#commands-and-quality-checks) | [CI workflow](.github/workflows/ci.yml) runs the complete MySQL suite |
+| PSR-12, modular code, and reusable gateway behavior | [Pint configuration](pint.json), [architecture and responsibilities](docs/ARCHITECTURE.md) | `make pint`, aggregate and gateway tests |
+| Git repository delivery with code, API export, setup, extension guide, and assumptions | This repository, this README, and the linked Postman/OpenAPI exports | [CI](.github/workflows/ci.yml) checks installation, tests, formatting, and documentation drift |
+
+## Assumptions and task scope
+
+- Orders and payments belong to the authenticated user. List endpoints return
+  that user's records; another user's resource returns 404.
+- New orders start pending. Customer details/items can be edited only while
+  pending. Status changes use the documented state machine; pending or successful
+  payments block cancellation, and any payment blocks deletion.
+- Each order accepts one successful payment for its full total. Currency comes
+  from `PAYMENT_CURRENCY` (USD by default). Partial payments, refunds, and currency
+  conversion are future features.
+- Item prices are non-negative decimal strings, such as `"19.99"`. Zero-value
+  orders are allowed. The server calculates totals using exact decimal arithmetic.
+- Payment creation requires `Idempotency-Key`. Reusing a key identifies the same
+  attempt, including a failed one; retry a failed payment with a new key. A stored
+  attempt returns 201 for either a successful or failed simulated outcome.
+- Credit-card and PayPal gateways are deterministic simulators. Environment
+  credentials are injectable configuration for future adapters. Real provider
+  connections and webhooks are outside the task's simulated-payment requirement.
+- Interrupted processing can leave an attempt pending. Automatic reconciliation
+  is future work; see [recovery guidance](docs/OPERATIONS.md) and the
+  [improvement roadmap](docs/ROADMAP.md).
+
 ## Docker setup
 
 Install Docker Desktop with Linux containers and Docker Compose. No host PHP,
@@ -95,6 +139,20 @@ Swagger UI is at `/api/documentation` (this workspace:
 http://localhost:8081/api/documentation). The spec is served at `/documentation/spec`.
 Set `API_DOCUMENTATION_ENABLED=false` to hide the UI, spec, and assets. Without an
 explicit flag, documentation is disabled when `APP_ENV=production`.
+
+### Continuous integration
+
+[GitHub Actions](.github/workflows/ci.yml) runs on pushes, pull requests, and manual
+dispatches. Each job starts the Docker stack on an isolated runner, validates the
+locked Composer installation and platform requirements, checks PSR-12 with Pint,
+and runs all unit/feature tests against the dedicated MySQL `app_testing` database.
+The documentation tests check route coverage, examples, and current exports before
+CI regenerates OpenAPI/Postman and rejects any export drift. Failed jobs print
+container logs; cleanup removes only that job's Compose containers and volumes.
+
+Inspect results in the repository's **Actions** tab. These same application checks
+can be run locally with the commands above. Newman walkthroughs and dependency/image
+scanning remain follow-up CI improvements in the [roadmap](docs/ROADMAP.md).
 
 ## Test database
 
@@ -350,7 +408,8 @@ Regenerate all exports with `make docs` after changing API attributes.
 
 ## How to add a payment gateway
 
-Exactly three production changes are needed. The example below is another
+There are three integration steps. These can touch multiple files; tests and API
+documentation must also be updated. The example below is another
 **simulator**; a real adapter must map provider outcomes and handle unknown outcomes
 through the recovery design in [the roadmap](docs/ROADMAP.md).
 

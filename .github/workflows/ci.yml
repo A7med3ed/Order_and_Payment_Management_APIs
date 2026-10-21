@@ -1,0 +1,60 @@
+name: API checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Tests, formatting, and API docs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      COMPOSE_PROJECT_NAME: order-payment-ci
+      APP_PORT: 8080
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Configure local environment
+        run: cp .env.example .env
+
+      - name: Build and start isolated Docker stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: Validate Composer and PHP platform
+        run: |
+          docker compose exec -T app composer validate --strict
+          docker compose exec -T app composer check-platform-reqs
+
+      - name: Check PSR-12 formatting
+        run: make pint
+
+      - name: Run unit and feature tests on MySQL
+        run: make test
+
+      - name: Regenerate API documentation and reject stale exports
+        run: |
+          make docs
+          git diff --exit-code -- docs/openapi docs/postman
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=100
+
+      - name: Remove CI containers and volumes
+        if: always()
+        run: docker compose down --volumes --remove-orphans
