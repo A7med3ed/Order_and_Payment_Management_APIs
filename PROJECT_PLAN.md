@@ -23,6 +23,10 @@ existing conventions, and record the decision in docs/DECISIONS.md.
 
 **User workflow override for Sprints 2 and 3:** implement both sprints first, then run their combined checks and tests. Only after the combined quality gates pass, make the two sprint commits and stop before Sprint 4.
 
+**User workflow override for Sprints 4 and 5:** implement both next sprints, run their combined checks and tests, then make and push one short, human-readable Conventional Commit per sprint. Stop before Sprint 6.
+
+**Sprint 4 concurrency clarification:** a pending attempt blocks a different payment key and order cancellation until its outcome is persisted. The same key returns the existing attempt without another charge. Persist a payment request fingerprint so changed details are rejected even after replay-cache expiry.
+
 1. **Audit first, then build.** Before creating anything, inspect: `composer.json` (Laravel and PHP versions), `bootstrap/`, `config/`, `routes/`, `app/`, existing migrations, existing Docker files, `.env.example`, `tests/`. Never overwrite an existing file without reading it first.
 2. **Work in sprints** in the order given. Each sprint has a *Definition of Done (DoD)*. Do not start the next sprint until the DoD passes.
 3. **One commit per sprint** (Conventional Commits, e.g. `feat(orders): add order CRUD with status transitions`).
@@ -541,12 +545,12 @@ Appending must lock the order's chain: inside a transaction, lock the latest ent
 |---|---|
 | Order user details | `customer_name`, `customer_email` on the order (plus `user_id` of the owner) |
 | Ownership | Users only see and modify their own orders (Policy). Other users' orders return 404 or 403 consistently (pick one, document it) |
-| Status transitions | `pending → confirmed`, `pending → cancelled`, `confirmed → cancelled` (only if no `successful` payment). `cancelled` is terminal |
+| Status transitions | `pending → confirmed`, `pending → cancelled`, `confirmed → cancelled` (only if no `successful` or `pending` payment). `cancelled` is terminal |
 | How an order becomes `confirmed` | `PATCH /api/orders/{order}/status` with `{ "status": "confirmed" }` |
 | Editing | Items/details can be updated only while the order is `pending` (otherwise 409 `INVALID_STATUS_TRANSITION`/`ORDER_NOT_EDITABLE`) |
 | Delete | Blocked with 409 `ORDER_HAS_PAYMENTS` if any payment exists (any status) |
 | Total | `SUM(quantity × price)` computed server-side with bcmath; client-sent totals are ignored |
-| Payments vs orders | `Orders` calls `OrderPaymentGuardInterface::hasPayments()` and `hasSuccessfulPayment()`; implemented by `Payments` |
+| Payments vs orders | `Orders` calls `OrderPaymentGuardInterface::hasPayments()`, `hasSuccessfulPayment()`, and `hasPendingPayment()`; implemented by `Payments` |
 
 ### 7.1 Domain-Driven Design for Orders (and Payments)
 
@@ -572,7 +576,7 @@ Pragmatic DDD inside Laravel: Eloquent stays the persistence mechanism, but **bu
 2. `total_amount` always equals `SUM(quantity × price)`. The aggregate recalculates it whenever items change. It can never be set from outside.
 3. Status changes follow the state machine: `pending → confirmed`, `pending → cancelled`, `confirmed → cancelled`. `cancelled` is terminal.
 4. Only `pending` orders are editable.
-5. An order with a `successful` payment cannot be cancelled.
+5. An order with a `successful` or `pending` payment cannot be cancelled.
 6. An order with any payment cannot be deleted.
 7. Only a `confirmed` order is payable. `OrderSnapshotData` exposes a `payable` flag computed from `canBePaid()`, so Payments never re-implements this rule.
 
@@ -619,7 +623,7 @@ class Order extends Model
 
     public function cancel(OrderPaymentGuardInterface $payments): void
     {
-        if ($payments->hasSuccessfulPayment($this->getKey())) {
+        if ($payments->hasSuccessfulPayment($this->getKey()) || $payments->hasPendingPayment($this->getKey())) {
             throw OrderHasPaymentsException::cannotCancel($this->getKey());
         }
         $this->transitionTo(OrderStatus::Cancelled);
@@ -778,6 +782,7 @@ Request ─► auth ─► IdempotencyMiddleware (replay / conflict / begin)
    2. If a payment already exists for (order, idempotency_key) -> return it
    3. Order status must be `confirmed`          else OrderNotConfirmedException (409)
    4. Order must not have a successful payment  else OrderAlreadyPaidException  (409)
+      Order must not have a pending attempt under another key (409 PAYMENT_IN_PROGRESS)
    5. Create Payment(status=pending, amount=order total, method, idempotency_key)
    6. Ledger: payment_initiated (memo)
  COMMIT
@@ -909,20 +914,22 @@ Recovery note: if the process dies between TX 1 and TX 2, the payment stays `pen
 
 **Goal:** idempotent, ledger-backed payment processing built on the strategy abstraction.
 
-- [ ] Migration `payments`: `id`, `order_id` (FK), `user_id`, `status` (`pending`/`successful`/`failed`), `method` (string), `amount` DECIMAL(12,2), `currency`, `transaction_id` nullable, `idempotency_key` nullable, `gateway_response` json nullable (sanitized), `failure_code` nullable, timestamps; unique `(order_id, idempotency_key)`; indexes on `order_id`, `status`, `method`.
-- [ ] `PaymentStatus` enum with `canTransitionTo()` (`pending → successful|failed`, both terminal). `Payment` model as aggregate root with `initiate()`, `markSuccessful(GatewayChargeResult)`, `markFailed(string $code, string $message)`; illegal transitions throw `InvalidPaymentTransitionException`; `status` is not mass assignable; domain events `PaymentSucceeded` / `PaymentFailed`. Factory.
-- [ ] **Gateway layer** (section 4): interface, `AbstractPaymentGateway`, DTOs, `GatewayException`, `CreditCardGateway`, `PayPalGateway`, `PaymentGatewayManager`, `config/payment.php`, `SupportedPaymentMethod` rule, `UnsupportedPaymentMethodException`.
-- [ ] `PaymentsServiceProvider`: merge config, bind the manager as a singleton, bind `OrderPaymentGuardInterface` → `OrderPaymentGuard` (replaces the temporary Orders binding), register routes.
-- [ ] DTOs: `ProcessPaymentData`, `PaymentFilterData`, `PaymentData`.
-- [ ] `ProcessPaymentRequest`: `method` validated by `SupportedPaymentMethod`; `payment_details` rules pulled dynamically from the resolved gateway (`rules()`); `toDto()` injects the `Idempotency-Key` header and authenticated user id.
-- [ ] `PaymentService::process()` exactly as in section 9 (two short transactions, gateway call outside, ledger entries, idempotent lookup). It reads orders only through `OrderSnapshotData` (`payable` flag) and changes payment state only through the aggregate methods, never by assigning `status`. Plus `list`, `listForOrder`, `find` with ownership scoping.
-- [ ] Exceptions: `OrderNotConfirmedException` (409), `OrderAlreadyPaidException` (409), `UnsupportedPaymentMethodException` (422).
-- [ ] `PaymentController`, `PaymentResource` (never expose raw gateway internals), routes with `->middleware('idempotent')` on the POST only. Wire the `/payments/{payment}/ledger` route.
-- [ ] Rate limiting: apply the `payments` limiter (per user, and per user + order) on the POST route in the order `auth:api` → `throttle:payments` → `idempotent`. Other Payments routes use the `api` limiter.
-- [ ] Document the Payments endpoints in `Payments/Docs` (tag `Payments`): request examples for `credit_card` and `paypal`, a successful payment, a **failed** payment (201 with `status: failed`), an idempotent replay, and error examples (401, 403, 404, 409 `ORDER_NOT_CONFIRMED` / `ORDER_ALREADY_PAID` / `IDEMPOTENCY_IN_PROGRESS`, 422 `VALIDATION_ERROR` / `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_REUSED`, 429). Include the `IdempotencyKey` header parameter.
-- [ ] Verify: deleting an order with payments returns 409 end to end (real guard now bound).
+- [x] Migration `payments`: `id`, `order_id` (FK), `user_id`, `status` (`pending`/`successful`/`failed`), `method` (string), `amount` DECIMAL(12,2), `currency`, `transaction_id` nullable, `idempotency_key` nullable, `gateway_response` json nullable (sanitized), `failure_code` nullable, timestamps; unique `(order_id, idempotency_key)`; indexes on `order_id`, `status`, `method`.
+- [x] `PaymentStatus` enum with `canTransitionTo()` (`pending → successful|failed`, both terminal). `Payment` model as aggregate root with `initiate()`, `markSuccessful(GatewayChargeResult)`, `markFailed(string $code, string $message)`; illegal transitions throw `InvalidPaymentTransitionException`; `status` is not mass assignable; domain events `PaymentSucceeded` / `PaymentFailed`. Factory.
+- [x] **Gateway layer** (section 4): interface, `AbstractPaymentGateway`, DTOs, `GatewayException`, `CreditCardGateway`, `PayPalGateway`, `PaymentGatewayManager`, `config/payment.php`, `SupportedPaymentMethod` rule, `UnsupportedPaymentMethodException`.
+- [x] `PaymentsServiceProvider`: merge config, bind the manager as a singleton, bind `OrderPaymentGuardInterface` → `OrderPaymentGuard` (replaces the temporary Orders binding), register routes.
+- [x] DTOs: `ProcessPaymentData`, `PaymentFilterData`, `PaymentData`.
+- [x] `ProcessPaymentRequest`: `method` validated by `SupportedPaymentMethod`; `payment_details` rules pulled dynamically from the resolved gateway (`rules()`); `toDto()` injects the `Idempotency-Key` header and authenticated user id.
+- [x] `PaymentService::process()` exactly as in section 9 (two short transactions, gateway call outside, ledger entries, idempotent lookup). It reads orders only through `OrderSnapshotData` (`payable` flag) and changes payment state only through the aggregate methods, never by assigning `status`. Plus `list`, `listForOrder`, `find` with ownership scoping.
+- [x] Exceptions: `OrderNotConfirmedException` (409), `OrderAlreadyPaidException` (409), `UnsupportedPaymentMethodException` (422).
+- [x] `PaymentController`, `PaymentResource` (never expose raw gateway internals), routes with `->middleware('idempotent')` on the POST only. Wire the `/payments/{payment}/ledger` route.
+- [x] Rate limiting: apply the `payments` limiter (per user, and per user + order) on the POST route in the order `auth:api` → `throttle:payments` → `idempotent`. Other Payments routes use the `api` limiter.
+- [x] Document the Payments endpoints in `Payments/Docs` (tag `Payments`): request examples for `credit_card` and `paypal`, a successful payment, a **failed** payment (201 with `status: failed`), an idempotent replay, and error examples (401, 403, 404, 409 `ORDER_NOT_CONFIRMED` / `ORDER_ALREADY_PAID` / `IDEMPOTENCY_IN_PROGRESS`, 422 `VALIDATION_ERROR` / `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_REUSED`, 429). Include the `IdempotencyKey` header parameter.
+- [x] Verify: deleting an order with payments returns 409 end to end (real guard now bound).
 
 **DoD:** successful and failed payments persist correctly with matching ledger entries; non-confirmed and already-paid orders are rejected; retrying with the same key never double-charges; a third dummy gateway works with **zero** changes to `PaymentService`; the payment POST returns 429 beyond its limit; Payments endpoints appear in Swagger UI with examples.
+
+**Sprint 4 verification (2026-10-21):** Complete after implementing Sprints 4 and 5 together. Combined checks: 145 passing tests, 783 assertions, Pint clean across 203 PHP files, valid/exported OpenAPI JSON/YAML, all 18 API operations documented/rate limited, Composer strict validation/platform requirements passing, payments migration applied, live Swagger/spec HTTP 200, anonymous payment POST HTTP 401, and clean ledger verification. Gateway calls outside transactions, rollback, replay/cache expiry, concurrent same/different keys, and third-gateway HTTP processing are covered.
 
 ---
 

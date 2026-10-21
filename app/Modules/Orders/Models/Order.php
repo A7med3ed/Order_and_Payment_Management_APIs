@@ -71,7 +71,7 @@ final class Order extends Model
 
     public function cancel(OrderPaymentGuardInterface $payments): void
     {
-        if ($this->exists && $payments->hasSuccessfulPayment((int) $this->getKey())) {
+        if ($this->exists && ($payments->hasSuccessfulPayment((int) $this->getKey()) || $payments->hasPendingPayment((int) $this->getKey()))) {
             throw OrderHasPaymentsException::cannotCancel();
         }
         $this->transitionTo(OrderStatus::Cancelled);

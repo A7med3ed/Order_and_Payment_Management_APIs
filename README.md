@@ -1,9 +1,9 @@
 # Order and Payment Management APIs
 
 An API-only Laravel 13 project using PHP 8.3 and MySQL 8.4. Node.js and npm are not required.
-Sprints 0–3 provide Docker, modular infrastructure, JWT authentication, rate limits,
-order management, immutable ledger history, idempotency infrastructure, and Swagger.
-Payment processing and gateway implementations arrive in Sprint 4.
+Sprints 0–4 provide Docker, modular infrastructure, JWT authentication, rate limits,
+order management, immutable ledger history, idempotent payments, simulated credit-card
+and PayPal gateways, Swagger, and the accompanying test suite.
 See [PROJECT_PLAN.md](PROJECT_PLAN.md)
 and [docs/DECISIONS.md](docs/DECISIONS.md).
 
@@ -139,15 +139,16 @@ with `Retry-After`, `X-RateLimit-Limit`, and `X-RateLimit-Remaining` headers.
 Modules live in `app/Modules/{Shared,Auth,Orders,Ledger,Payments}`. Each provider
 loads its module's routes, migrations, and config. Auth owns its User model,
 factory, DTOs, requests, resources, service, and user migration. Migration filenames
-are preserved so existing databases do not recreate tables. Payments currently
-contains only its provider and registration directories.
+are preserved so existing databases do not recreate tables. Payments owns the gateway
+registry, payment aggregate, processing service, and real order-payment guard.
 Shared contains API errors, JSON middleware, rate limiters, pagination data, and
 exact decimal-string Money helpers using bcmath.
 
 Controllers validate/map DTOs, call a service, and return resources. Order and
-Payment application services will only orchestrate; their aggregates will own
+Payment application services only orchestrate; their aggregates own
 business rules. Other models remain data, except the ledger's immutability guard.
-Cross-module access uses contracts and DTOs. Gateway variables remain reserved for Sprint 4.
+Cross-module access uses contracts and DTOs. Gateway credentials are supplied through
+the module configuration; the current adapters are deterministic simulations.
 
 ## Orders
 
@@ -170,19 +171,19 @@ replace the whole item collection. Empty updates are rejected. Up to 1000 items
 per request are accepted; prices and totals must fit DECIMAL(12,2).
 
 Transitions: `pending -> confirmed`, `pending -> cancelled`, and
-`confirmed -> cancelled` when no successful payment exists. Cancelled is terminal.
+`confirmed -> cancelled` when no successful or pending payment exists. Cancelled is terminal.
 OrderService coordinates transactions and after-commit events; all state and item
 rules are enforced by the aggregate. Its only optional-data conditional selects
 whether to persist a supplied replacement item collection.
 
-Until Sprint 4 implements Payments, a temporary no-payments guard is bound as
-specified in the plan. Payment-aware rejection is already exercised with a test guard.
+The Payments provider binds the real order-payment guard. Any payment blocks deletion;
+pending attempts also block cancellation until the gateway result is persisted.
 
 ## Immutable ledger
 
 `GET /api/orders/{order}/ledger` returns owner-scoped, paginated history in sequence
-order. No write/update/delete ledger endpoints exist. Payment-scoped history is
-deferred until Sprint 4 can check payment ownership through a contract.
+order. `GET /api/payments/{payment}/ledger` provides payment-scoped history after an
+ownership check through PaymentReaderInterface. No write/update/delete ledger endpoints exist.
 
 Recorders use Ledger contracts and LedgerEntryData, not other modules' models.
 Initiated/failed events are memos, successful payments are credits, and reversals
@@ -205,8 +206,8 @@ provide tamper evidence, not protection from an administrator rewriting the data
 
 ## Idempotency infrastructure
 
-The `idempotent` middleware is opt-in and will be applied to payment creation in
-Sprint 4. Ordering is authentication, throttling, then idempotency. Replays count
+The `idempotent` middleware applies to payment creation. Ordering is authentication,
+throttling, then idempotency. Replays count
 toward the rate limit. Keys are case-sensitive, scoped per user, and accept 8–255
 ASCII letters/numbers/dots/colons/underscores/hyphens; UUIDs are recommended.
 
@@ -217,7 +218,7 @@ ASCII letters/numbers/dots/colons/underscores/hyphens; UUIDs are recommended.
 | Same key currently processing | 409 `IDEMPOTENCY_IN_PROGRESS`, `Retry-After: 1` |
 | Different method/path/query/body with same key | 422 `IDEMPOTENCY_KEY_REUSED` |
 | Validation error or server error/exception | Reservation released for a retry |
-| Key expires | Can be claimed anew |
+| Key expires | Replay-cache claim can be renewed; the permanent payment key still prevents another charge |
 
 Canonical JSON sorts object keys and preserves array order. Only the request hash
 is persisted; raw request/card details are not stored. Response bytes are stored
@@ -227,5 +228,64 @@ prevents a late request from changing or releasing a newer claim.
 
 TTL is `IDEMPOTENCY_TTL_HOURS` (24 by default). Run `php artisan idempotency:prune`
 manually, or run Laravel's scheduler (`php artisan schedule:work`) to execute the
-hourly pruning task. Processing claims expire too; provider/domain safeguards and
-pending-payment reconciliation are part of the later payment integration.
+hourly pruning task. Processing claims expire too; payment key uniqueness and the
+permanent request fingerprint remain effective after pruning.
+
+## Payments
+
+All routes require a JWT. Lists are owner-scoped, newest first, and accept `page`
+and `per_page` (15 by default, maximum 100). Other users receive 404.
+
+| Method | Endpoint | Behavior |
+|---|---|---|
+| POST | `/api/orders/{order}/payments` | Process a confirmed order; requires `Idempotency-Key` |
+| GET | `/api/payments` | Filter by `status`, historical `method`, and `order_id` |
+| GET | `/api/orders/{order}/payments` | Filter and paginate one order's attempts |
+| GET | `/api/payments/{payment}` | Read the safe payment resource |
+| GET | `/api/payments/{payment}/ledger` | Read immutable events for this attempt |
+
+Example JSON payloads (use simulated data only):
+
+```json
+{"method":"credit_card","payment_details":{"card_number":"4242424242424242","expiry_month":12,"expiry_year":2030,"cvv":"123","card_holder":"Jane Doe"}}
+```
+
+```json
+{"method":"paypal","payment_details":{"email":"payer@example.com"}}
+```
+
+Amount and currency come from the order snapshot and `PAYMENT_CURRENCY` (USD by
+default). Credit-card details validate digit counts and month/year ranges; these
+simulations do not verify card ownership, issuer acceptance, or real expiry.
+Card ending `0002` declines with `CARD_DECLINED`; `0003` simulates a provider error.
+PayPal `fail@...` declines with `INSUFFICIENT_FUNDS`; `error@...` simulates a provider error.
+Other valid details succeed. Transaction references derive from the order and key.
+Both successful and failed attempts return **201**, with `status` and `failure_code`.
+Gateway errors become failed attempts with `GATEWAY_ERROR`. Raw card/CVV/credentials
+are neither stored nor returned; card metadata is limited to last4 and brand.
+
+Payment transitions are `pending -> successful|failed`; both outcomes are terminal.
+The first transaction locks the order, applies aggregate eligibility rules, creates
+the pending attempt, and appends a memo. The gateway runs outside the transaction.
+The second transaction saves the aggregate outcome and ledger event atomically;
+domain events dispatch after commit. Successful orders reject another key with
+409 `ORDER_ALREADY_PAID`. Failed attempts may be retried with a new key.
+A concurrent different key receives 409 `PAYMENT_IN_PROGRESS` while the original
+attempt is pending. Retry-After is one second for in-progress requests.
+
+The POST has two configurable limits: `RATE_LIMIT_PAYMENTS_PER_MINUTE` (10 per
+user) and `RATE_LIMIT_PAYMENTS_PER_ORDER_PER_MINUTE` (3 per user/order), each per
+minute. All payment reads use the general API limiter. Authentication precedes
+throttling, which precedes idempotency; replays and invalid requests consume limits.
+
+Known recovery limitation: if execution stops after the initial commit or the
+provider charge but before the outcome commit, the attempt stays pending. Retrying
+the same key returns that attempt without charging again; other keys and cancellation
+remain blocked. Reconciliation is a future operational feature. Inspect provider
+records and the ledger before resolving an attempt; do not retry a charge blindly.
+
+Gateways declare their own detail rules. Add an AbstractPaymentGateway subclass,
+a `payment.gateways` configuration entry, and environment credentials; no changes
+to PaymentService or the HTTP layer are needed. Tests cover both runtime `extend()`
+registration and configuration registration through the real HTTP endpoint.
+The full gateway tutorial and Postman delivery remain Sprint 6.

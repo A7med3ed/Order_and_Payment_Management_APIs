@@ -7,9 +7,9 @@ namespace App\Modules\Shared\Docs;
 use OpenApi\Attributes as OA;
 
 #[OA\Info(
-    version: '0.1.0',
+    version: '0.5.0',
     title: 'Order and Payment Management API',
-    description: 'Authenticate with a JWT bearer token. API errors use message/code and validation errors include errors. Limits are configurable; 429 includes Retry-After. Payment creation in a later sprint will require Idempotency-Key; replays count toward rate limits.',
+    description: 'Authenticate with a JWT bearer token. API errors use message/code and validation errors include errors. Limits are configurable; 429 includes Retry-After. Payment creation requires Idempotency-Key; replays count toward rate limits. Gateways are deterministic simulations.',
 )]
 #[OA\Server(url: '/', description: 'Current server')]
 #[OA\SecurityScheme(securityScheme: 'bearerAuth', type: 'http', scheme: 'bearer', bearerFormat: 'JWT')]

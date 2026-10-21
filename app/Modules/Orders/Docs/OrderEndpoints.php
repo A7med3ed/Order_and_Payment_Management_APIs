@@ -139,7 +139,7 @@ final class OrderEndpoints
         path: '/api/orders/{order}/status',
         operationId: 'changeOrderStatus',
         summary: 'Confirm or cancel an order',
-        description: 'Allowed transitions: pending to confirmed/cancelled; confirmed to cancelled only without successful payment. Cancelled is terminal.',
+        description: 'Allowed transitions: pending to confirmed/cancelled; confirmed to cancelled only without successful or pending payments. Cancelled is terminal.',
         tags: ['Orders'],
         security: [['bearerAuth' => []]],
         parameters: [new OA\Parameter(ref: '#/components/parameters/OrderId')],

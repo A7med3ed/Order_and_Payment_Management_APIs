@@ -1,8 +1,8 @@
 openapi: 3.0.0
 info:
   title: 'Order and Payment Management API'
-  description: 'Authenticate with a JWT bearer token. API errors use message/code and validation errors include errors. Limits are configurable; 429 includes Retry-After. Payment creation in a later sprint will require Idempotency-Key; replays count toward rate limits.'
-  version: 0.1.0
+  description: 'Authenticate with a JWT bearer token. API errors use message/code and validation errors include errors. Limits are configurable; 429 includes Retry-After. Payment creation requires Idempotency-Key; replays count toward rate limits. Gateways are deterministic simulations.'
+  version: 0.5.0
 servers:
   -
     url: /
@@ -142,7 +142,7 @@ paths:
       tags:
         - Ledger
       summary: 'Read an order financial history'
-      description: 'Owner-scoped and read-only. Entries are ordered by chain_sequence. Credits add to balance, debits subtract, memos have no balance effect. Payment-scoped history is introduced with Payments in Sprint 4.'
+      description: 'Owner-scoped and read-only. Entries are ordered by chain_sequence. Credits add to balance, debits subtract, memos have no balance effect.'
       operationId: orderLedger
       parameters:
         -
@@ -189,6 +189,38 @@ paths:
                       last_page: 1
                       per_page: 15
                       total: 1
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        404:
+          $ref: '#/components/responses/NotFound'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        -
+          bearerAuth: []
+  '/api/payments/{payment}/ledger':
+    get:
+      tags:
+        - Ledger
+      summary: 'Read a payment financial history'
+      description: 'Read-only, owner-scoped payment events in chain order. Another user receives 404.'
+      operationId: paymentLedger
+      parameters:
+        -
+          $ref: '#/components/parameters/PaymentId'
+        -
+          $ref: '#/components/parameters/Page'
+        -
+          $ref: '#/components/parameters/PerPage'
+      responses:
+        200:
+          description: 'Paginated immutable payment events.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerPage'
         401:
           $ref: '#/components/responses/Unauthenticated'
         404:
@@ -591,7 +623,7 @@ paths:
       tags:
         - Orders
       summary: 'Confirm or cancel an order'
-      description: 'Allowed transitions: pending to confirmed/cancelled; confirmed to cancelled only without successful payment. Cancelled is terminal.'
+      description: 'Allowed transitions: pending to confirmed/cancelled; confirmed to cancelled only without successful or pending payments. Cancelled is terminal.'
       operationId: changeOrderStatus
       parameters:
         -
@@ -672,6 +704,267 @@ paths:
                   value:
                     message: 'Only pending orders are editable.'
                     code: ORDER_NOT_EDITABLE
+      security:
+        -
+          bearerAuth: []
+  '/api/orders/{order}/payments':
+    get:
+      tags:
+        - Payments
+      summary: 'List an order payment attempts'
+      description: 'Owner-scoped, newest first, including failed attempts. Another user receives 404.'
+      operationId: listOrderPayments
+      parameters:
+        -
+          $ref: '#/components/parameters/OrderId'
+        -
+          $ref: '#/components/parameters/Page'
+        -
+          $ref: '#/components/parameters/PerPage'
+        -
+          $ref: '#/components/parameters/PaymentStatusFilter'
+        -
+          $ref: '#/components/parameters/PaymentMethodFilter'
+      responses:
+        200:
+          description: 'Paginated payment attempts.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentPage'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        404:
+          $ref: '#/components/responses/NotFound'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        -
+          bearerAuth: []
+    post:
+      tags:
+        - Payments
+      summary: 'Pay a confirmed order'
+      description: 'Simulated charges: card ending 0002 declines, 0003 raises a provider error; PayPal fail@ declines, error@ raises a provider error. Successful and failed attempts return 201. Authentication runs before the per-user and per-order limits, followed by idempotency. Replays count toward both limits. An existing pending attempt is returned without another charge for the same key; a different key receives PAYMENT_IN_PROGRESS. Pending recovery requires operator reconciliation. The domain key/fingerprint remains effective after the 24-hour replay cache expires.'
+      operationId: processPayment
+      parameters:
+        -
+          $ref: '#/components/parameters/OrderId'
+        -
+          $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessPayment'
+            examples:
+              CreditCard:
+                value:
+                  method: credit_card
+                  payment_details:
+                    card_number: '4242424242424242'
+                    expiry_month: 12
+                    expiry_year: 2030
+                    cvv: '123'
+                    card_holder: 'Jane Doe'
+              PayPal:
+                value:
+                  method: paypal
+                  payment_details:
+                    email: payer@example.com
+              DeclinedCard:
+                value:
+                  method: credit_card
+                  payment_details:
+                    card_number: '4000000000000002'
+                    expiry_month: 12
+                    expiry_year: 2030
+                    cvv: '123'
+                    card_holder: 'Jane Doe'
+      responses:
+        201:
+          description: 'Persisted payment attempt (including failed payments). Replay returns identical status/body and Idempotent-Replayed: true. No provider internals are exposed.'
+          headers:
+            Idempotent-Replayed:
+              description: 'Present with value true on a cached replay.'
+              schema:
+                type: string
+                example: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+              examples:
+                SuccessfulPayment:
+                  value:
+                    data:
+                      id: 1
+                      order_id: 1
+                      user_id: 1
+                      status: successful
+                      method: credit_card
+                      amount: '39.98'
+                      currency: USD
+                      transaction_id: cc_example
+                      failure_code: null
+                      created_at: '2026-10-21T00:00:00Z'
+                      updated_at: '2026-10-21T00:00:00Z'
+                FailedPayment:
+                  value:
+                    data:
+                      id: 2
+                      order_id: 1
+                      user_id: 1
+                      status: failed
+                      method: credit_card
+                      amount: '39.98'
+                      currency: USD
+                      transaction_id: null
+                      failure_code: CARD_DECLINED
+                      created_at: '2026-10-21T00:00:00Z'
+                      updated_at: '2026-10-21T00:00:00Z'
+                IdempotentReplay:
+                  summary: 'Same response as the first successful request; replay header is true.'
+                  value:
+                    data:
+                      id: 1
+                      order_id: 1
+                      user_id: 1
+                      status: successful
+                      method: credit_card
+                      amount: '39.98'
+                      currency: USD
+                      transaction_id: cc_example
+                      failure_code: null
+                      created_at: '2026-10-21T00:00:00Z'
+                      updated_at: '2026-10-21T00:00:00Z'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        409:
+          description: 'Order or request conflict.'
+          headers:
+            Retry-After:
+              description: 'One second for an in-progress request/payment.'
+              schema:
+                type: integer
+                example: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                OrderNotConfirmed:
+                  value:
+                    message: 'Only confirmed orders can be paid.'
+                    code: ORDER_NOT_CONFIRMED
+                OrderAlreadyPaid:
+                  value:
+                    message: 'This order already has a successful payment.'
+                    code: ORDER_ALREADY_PAID
+                IdempotencyInProgress:
+                  value:
+                    message: 'A request with this key is still processing.'
+                    code: IDEMPOTENCY_IN_PROGRESS
+                PaymentInProgress:
+                  value:
+                    message: 'This order has a pending payment.'
+                    code: PAYMENT_IN_PROGRESS
+        422:
+          description: 'Invalid input or idempotency key.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ValidationError:
+                  value:
+                    message: 'The given data was invalid.'
+                    code: VALIDATION_ERROR
+                    errors:
+                      payment_details.cvv:
+                        - 'The CVV must contain 3 or 4 digits.'
+                KeyRequired:
+                  value:
+                    message: 'The Idempotency-Key header is required.'
+                    code: IDEMPOTENCY_KEY_REQUIRED
+                KeyReused:
+                  value:
+                    message: 'This key was already used for a different request.'
+                    code: IDEMPOTENCY_KEY_REUSED
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        -
+          bearerAuth: []
+  /api/payments:
+    get:
+      tags:
+        - Payments
+      summary: 'List and filter your payments'
+      description: 'Owner-scoped, newest first. Filters combine status, historical method, and order_id. No provider internals are exposed.'
+      operationId: listPayments
+      parameters:
+        -
+          $ref: '#/components/parameters/Page'
+        -
+          $ref: '#/components/parameters/PerPage'
+        -
+          $ref: '#/components/parameters/PaymentStatusFilter'
+        -
+          $ref: '#/components/parameters/PaymentMethodFilter'
+        -
+          name: order_id
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        200:
+          description: 'Paginated payment attempts.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentPage'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        -
+          bearerAuth: []
+  '/api/payments/{payment}':
+    get:
+      tags:
+        - Payments
+      summary: 'Get a payment attempt'
+      operationId: showPayment
+      parameters:
+        -
+          $ref: '#/components/parameters/PaymentId'
+      responses:
+        200:
+          description: 'Payment details without raw provider data.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        404:
+          $ref: '#/components/responses/NotFound'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
       security:
         -
           bearerAuth: []
@@ -1011,6 +1304,135 @@ components:
           maxItems: 1000
           minItems: 1
       type: object
+    Payment:
+      required:
+        - id
+        - order_id
+        - user_id
+        - status
+        - method
+        - amount
+        - currency
+      properties:
+        id:
+          type: integer
+          example: 1
+        order_id:
+          type: integer
+          example: 1
+        user_id:
+          type: integer
+          example: 1
+        status:
+          type: string
+          enum:
+            - pending
+            - successful
+            - failed
+        method:
+          description: 'Enabled gateway name; extensible through configuration.'
+          type: string
+          example: credit_card
+        amount:
+          type: string
+          example: '39.98'
+        currency:
+          type: string
+          example: USD
+        transaction_id:
+          type: string
+          nullable: true
+        failure_code:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      type: object
+    PaymentResponse:
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Payment'
+      type: object
+    PaymentPage:
+      required:
+        - data
+        - links
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payment'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+      type: object
+    ProcessPayment:
+      required:
+        - method
+        - payment_details
+      properties:
+        method:
+          description: 'credit_card, paypal, or an enabled extension.'
+          type: string
+        payment_details:
+          description: 'Validated dynamically by the selected gateway. Extensions define their own fields.'
+          oneOf:
+            -
+              $ref: '#/components/schemas/CardDetails'
+            -
+              $ref: '#/components/schemas/PayPalDetails'
+      type: object
+    CardDetails:
+      required:
+        - card_number
+        - expiry_month
+        - expiry_year
+        - cvv
+        - card_holder
+      properties:
+        card_number:
+          type: string
+          pattern: '^[0-9]{13,19}$'
+          example: '4242424242424242'
+        expiry_month:
+          type: integer
+          example: 12
+          maximum: 12
+          minimum: 1
+        expiry_year:
+          type: integer
+          example: 2030
+          maximum: 9999
+          minimum: 2000
+        cvv:
+          type: string
+          pattern: '^[0-9]{3,4}$'
+          example: '123'
+        card_holder:
+          type: string
+          example: 'Jane Doe'
+          maxLength: 255
+      type: object
+      additionalProperties: false
+    PayPalDetails:
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: payer@example.com
+          maxLength: 255
+      type: object
+      additionalProperties: false
     ErrorResponse:
       required:
         - message
@@ -1178,6 +1600,28 @@ components:
       schema:
         type: integer
         minimum: 1
+    PaymentId:
+      name: payment
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    PaymentStatusFilter:
+      name: status
+      in: query
+      schema:
+        type: string
+        enum:
+          - pending
+          - successful
+          - failed
+    PaymentMethodFilter:
+      name: method
+      in: query
+      description: 'Historical gateway name; disabled methods may still be filtered.'
+      schema:
+        type: string
     Page:
       name: page
       in: query
@@ -1214,6 +1658,9 @@ tags:
   -
     name: Orders
     description: 'Owner-scoped order management (introduced in Sprint 2).'
+  -
+    name: Payments
+    description: 'Idempotent payment attempts (introduced in Sprint 4).'
   -
     name: Ledger
     description: 'Read-only financial history (introduced in Sprint 3).'

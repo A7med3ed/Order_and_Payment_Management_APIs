@@ -14,6 +14,6 @@ final class OrderHasPaymentsException extends ApiException
     }
     public static function cannotCancel(): self
     {
-        return new self('An order with a successful payment cannot be cancelled.');
+        return new self('An order with a successful or pending payment cannot be cancelled.');
     }
 }

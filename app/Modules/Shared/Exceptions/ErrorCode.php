@@ -17,6 +17,7 @@ enum ErrorCode: string
     case OrderHasPayments = 'ORDER_HAS_PAYMENTS';
     case OrderNotConfirmed = 'ORDER_NOT_CONFIRMED';
     case OrderAlreadyPaid = 'ORDER_ALREADY_PAID';
+    case PaymentInProgress = 'PAYMENT_IN_PROGRESS';
     case InvalidStatusTransition = 'INVALID_STATUS_TRANSITION';
     case OrderNotEditable = 'ORDER_NOT_EDITABLE';
     case IdempotencyKeyRequired = 'IDEMPOTENCY_KEY_REQUIRED';

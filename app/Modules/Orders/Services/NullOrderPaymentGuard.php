@@ -16,4 +16,8 @@ final class NullOrderPaymentGuard implements OrderPaymentGuardInterface
     {
         return false;
     }
+    public function hasPendingPayment(int $orderId): bool
+    {
+        return false;
+    }
 }
