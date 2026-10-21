@@ -10,6 +10,12 @@ use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
 {
+    protected function resetAuthentication(): void
+    {
+        $this->app['auth']->guard('api')->unsetToken();
+        $this->app['auth']->forgetGuards();
+    }
+
     public function createApplication(): Application
     {
         $app = parent::createApplication();

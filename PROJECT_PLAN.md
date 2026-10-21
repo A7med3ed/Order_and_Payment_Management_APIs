@@ -833,21 +833,23 @@ Recovery note: if the process dies between TX 1 and TX 2, the payment stays `pen
 
 **Goal:** module system in place, error handling standardized, JWT auth working.
 
-- [ ] Create the folder structure for `Shared`, `Auth`, `Orders`, `Ledger`, `Payments` (section 3.1).
-- [ ] Create each module's ServiceProvider (routes under `/api`, migrations, config, bindings). Register them in the provider list.
-- [ ] **Shared:** `ApiException`, `ErrorCode` enum, `ApiResponse` trait, global exception rendering for 401/403/404/405/409/422/429/500 in the standard format, `ForceJsonResponse` middleware for `api/*`, `PaginationData`, `Money` helper (bcmath) with unit tests.
-- [ ] **Rate limiting (section 3.5):** `Shared/Config/rate_limits.php` (env-driven, with the variables added to `.env.example`), named limiters `auth-login`, `auth-register`, `api` registered from `SharedServiceProvider`, 429 rendering in the standard format with `Retry-After` and `X-RateLimit-*` headers.
-- [ ] **OpenAPI foundation (section 8.1):** install `darkaonline/l5-swagger`, point the scan paths to `app/Modules`, create `Shared/Docs` (info, `bearerAuth`, error schemas, reusable parameters and responses), wire `make docs`.
-- [ ] **Auth:**
-  - [ ] Install `php-open-source-saver/jwt-auth`, publish config, `php artisan jwt:secret`, configure the `api` guard with the `jwt` driver.
-  - [ ] Move/adapt `User` into the Auth module (implement `JWTSubject`), update `config/auth.php`, keep migrations working.
-  - [ ] DTOs: `RegisterData`, `LoginData`, `TokenData`.
-  - [ ] `RegisterRequest`, `LoginRequest` (`toDto()`), `AuthService`, `AuthController`, `UserResource`.
-  - [ ] Routes: register, login, logout, me (the rest of the API is behind `auth:api`). Apply `throttle:auth-login` and `throttle:auth-register`, and the `api` limiter on the authenticated group.
-  - [ ] Document the Auth endpoints in `Auth/Docs` (tag `Authentication`) with success and error examples (401, 422, 429).
-- [ ] Feature tests for Auth.
+- [x] Create the folder structure for `Shared`, `Auth`, `Orders`, `Ledger`, `Payments` (section 3.1).
+- [x] Create each module's ServiceProvider (routes under `/api`, migrations, config, bindings). Register them in the provider list.
+- [x] **Shared:** `ApiException`, `ErrorCode` enum, `ApiResponse` trait, global exception rendering for 401/403/404/405/409/422/429/500 in the standard format, `ForceJsonResponse` middleware for `api/*`, `PaginationData`, `Money` helper (bcmath) with unit tests.
+- [x] **Rate limiting (section 3.5):** `Shared/Config/rate_limits.php` (env-driven, with the variables added to `.env.example`), named limiters `auth-login`, `auth-register`, `api` registered from `SharedServiceProvider`, 429 rendering in the standard format with `Retry-After` and `X-RateLimit-*` headers.
+- [x] **OpenAPI foundation (section 8.1):** install `darkaonline/l5-swagger`, point the scan paths to `app/Modules`, create `Shared/Docs` (info, `bearerAuth`, error schemas, reusable parameters and responses), wire `make docs`.
+- [x] **Auth:**
+  - [x] Install `php-open-source-saver/jwt-auth`, publish config, `php artisan jwt:secret`, configure the `api` guard with the `jwt` driver.
+  - [x] Move/adapt `User` into the Auth module (implement `JWTSubject`), update `config/auth.php`, keep migrations working.
+  - [x] DTOs: `RegisterData`, `LoginData`, `TokenData`.
+  - [x] `RegisterRequest`, `LoginRequest` (`toDto()`), `AuthService`, `AuthController`, `UserResource`.
+  - [x] Routes: register, login, logout, me (the rest of the API is behind `auth:api`). Apply `throttle:auth-login` and `throttle:auth-register`, and the `api` limiter on the authenticated group.
+  - [x] Document the Auth endpoints in `Auth/Docs` (tag `Authentication`) with success and error examples (401, 422, 429).
+- [x] Feature tests for Auth.
 
 **DoD:** register → login → `GET /api/auth/me` with Bearer token works; unauthenticated calls return the standard JSON 401; repeated failed logins return the standard 429; Swagger UI shows the Authentication endpoints; tests and Pint pass.
+
+**Sprint 1 verification (2026-10-21):** Complete. 35 tests pass (129 assertions), Pint passes (74 files), OpenAPI JSON/YAML export succeeds, and live Swagger UI/assets/spec return 200 at `http://localhost:8081/api/documentation`. JWT authentication, token invalidation/expiry, JSON errors, and configured rate limits are tested. See `docs/DECISIONS.md`.
 
 ---
 

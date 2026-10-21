@@ -34,3 +34,21 @@
 - Re-ran Composer setup and verified the existing `.env` and application key did not change.
 - Deliberately supplied the main database to PHPUnit and confirmed the test base rejected it before migration-based setup; the failure was expected and proves the isolation guard.
 - Local environment, database files, and vendor dependencies remain ignored by Git. The optional services and subsequent sprint features were not started.
+
+## Sprint 1 decisions and verification
+
+- Added compatible releases `php-open-source-saver/jwt-auth` 2.9.3 and L5-Swagger 11.2.0 (swagger-php 6.18.0); existing Laravel and locked dependency versions remain unchanged.
+- Each module provider inherits generic route/migration/config registration from Shared. Orders, Ledger, and Payments remain registration skeletons; their business behavior is deferred to the assigned sprints.
+- Auth owns User, its factory, and the stock user/session/password-reset migration. Preserve the migration filename so existing MySQL databases do not recreate those tables. Keep Laravel's root auth config and the published JWT/Swagger config files for their framework/package conventions.
+- Registration returns a 201 UserResource; clients log in separately for a JWT. Login returns a data envelope containing access_token, token_type, expires_in (seconds), and a UserResource. Logout returns 204 and blacklists the token.
+- Normalize registration/login email by trimming and lowercasing; passwords require at least eight characters with letters and numbers. Enforce bcrypt's 72-byte limit on both endpoints so multibyte input yields validation errors rather than truncation or server errors.
+- AuthService receives the authentication factory and resolves the current API guard per call, avoiding retained request/user state. Feature tests clear the package's token cache between simulated HTTP requests so multiple users behave like independent PHP-FPM requests.
+- Setup now parses `.env` values and generates only missing application/JWT secrets. The JWT package's --always-no option skips even an existing empty JWT_SECRET line, so use its --force option only after confirming that the value is empty. Never print or commit generated secrets.
+- Standard API errors include 405 METHOD_NOT_ALLOWED in addition to the planned codes. Validation exposes field errors; unexpected 500 responses never reveal debug details. Preserve HTTP exception headers, including Allow, Retry-After, and rate-limit headers.
+- Named login, registration, and API limiters follow the plan. Public Swagger UI/spec/assets/callback routes share a separate configurable IP limiter (60/minute by default). API_DOCUMENTATION_ENABLED controls every documentation route, defaulting off in production when no explicit flag is set.
+- Swagger's view requires its OAuth callback route even with bearer-only API authentication; place this package route and spec/assets under /documentation, while documenting /api/documentation itself. Keep schemas and reusable parameter attributes in separate classes because swagger-php does not retain the schema attributes when mixed with parameter attributes on the same class.
+- Docker/Composer setup generate the runtime Swagger spec; make docs also exports JSON and YAML into docs/openapi without Node. Both formats are validated by generation and tested for equivalent content.
+- Money uses exact bcmath decimal strings, rejects extra precision/scientific notation, and rejects results exceeding DECIMAL(12,2). No floating-point money arithmetic is introduced.
+- Tightened .gitignore to exclude .env variants and storage/api-docs while allowing the intentional example/test environment files and docs/openapi exports.
+- Verification: 35 tests pass with 129 assertions on MySQL; Pint passes all 74 PHP files. Composer strict validation and platform requirements pass. Rebuilt Docker services are healthy and startup preserves existing application/JWT secrets.
+- Live HTTP checks: root, /up, Swagger UI, spec, Swagger CSS, and Swagger JS return 200 through Nginx at localhost:8081. An anonymous /api/auth/me request returns JSON 401 UNAUTHENTICATED without an Accept header. Feature tests cover register/login/me/logout, expiry, validation, per-user/per-IP limits, 429 headers/window reset, and standardized errors.

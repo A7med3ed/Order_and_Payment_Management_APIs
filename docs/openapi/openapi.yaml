@@ -1,0 +1,449 @@
+openapi: 3.0.0
+info:
+  title: 'Order and Payment Management API'
+  description: 'Authenticate with a JWT bearer token. API errors use message/code and validation errors include errors. Limits are configurable; 429 includes Retry-After. Payment creation in a later sprint will require Idempotency-Key; replays count toward rate limits.'
+  version: 0.1.0
+servers:
+  -
+    url: /
+    description: 'Current server'
+paths:
+  /api/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: 'Register a user'
+      description: 'Email is trimmed and normalized to lowercase. Returns the user; log in separately to obtain a JWT.'
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              RegisterUser:
+                value:
+                  name: 'Jane Doe'
+                  email: jane@example.com
+                  password: StrongPass123!
+                  password_confirmation: StrongPass123!
+      responses:
+        201:
+          description: 'User created.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+              examples:
+                Registered:
+                  value:
+                    data:
+                      id: 1
+                      name: 'Jane Doe'
+                      email: jane@example.com
+                      created_at: '2026-10-21T00:00:00.000000Z'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security: []
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: 'Log in and obtain a JWT'
+      description: 'Limited by normalized email and IP address. expires_in is seconds. Send access_token as Authorization: Bearer <token>.'
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              Login:
+                value:
+                  email: jane@example.com
+                  password: StrongPass123!
+      responses:
+        200:
+          description: Authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+              examples:
+                Authenticated:
+                  value:
+                    data:
+                      access_token: eyJ...example-jwt
+                      token_type: bearer
+                      expires_in: 3600
+                      user:
+                        id: 1
+                        name: 'Jane Doe'
+                        email: jane@example.com
+                        created_at: '2026-10-21T00:00:00.000000Z'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        422:
+          $ref: '#/components/responses/ValidationError'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security: []
+  /api/auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: 'Get the current user'
+      operationId: currentUser
+      responses:
+        200:
+          description: 'Current user.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+              examples:
+                CurrentUser:
+                  value:
+                    data:
+                      id: 1
+                      name: 'Jane Doe'
+                      email: jane@example.com
+                      created_at: '2026-10-21T00:00:00.000000Z'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        -
+          bearerAuth: []
+  /api/auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: 'Invalidate the current JWT'
+      description: 'The token is blacklisted until its expiry. Returns an empty response.'
+      operationId: logout
+      responses:
+        204:
+          description: 'Token invalidated; no response body.'
+        401:
+          $ref: '#/components/responses/Unauthenticated'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        -
+          bearerAuth: []
+  /api/documentation:
+    get:
+      tags:
+        - Documentation
+      summary: 'Open Swagger UI'
+      description: 'Public when API_DOCUMENTATION_ENABLED is true. Disabled in production by default. Documentation assets and spec downloads use the same flag and IP rate limiter.'
+      operationId: documentation
+      responses:
+        200:
+          description: 'Swagger UI.'
+          content:
+            text/html:
+              schema:
+                type: string
+        404:
+          $ref: '#/components/responses/NotFound'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+      security: []
+components:
+  schemas:
+    User:
+      required:
+        - id
+        - name
+        - email
+        - created_at
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: 'Jane Doe'
+        email:
+          type: string
+          format: email
+          example: jane@example.com
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-10-21T00:00:00.000000Z'
+          nullable: true
+      type: object
+    UserResponse:
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+      type: object
+    TokenResponse:
+      required:
+        - data
+      properties:
+        data:
+          required:
+            - access_token
+            - token_type
+            - expires_in
+            - user
+          properties:
+            access_token:
+              type: string
+              example: eyJ...example-jwt
+            token_type:
+              type: string
+              example: bearer
+            expires_in:
+              type: integer
+              example: 3600
+            user:
+              $ref: '#/components/schemas/User'
+          type: object
+      type: object
+    RegisterRequest:
+      required:
+        - name
+        - email
+        - password
+        - password_confirmation
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          description: 'At least 8 characters including letters and numbers; at most 72 UTF-8 bytes (bcrypt limit).'
+          type: string
+          format: password
+          writeOnly: true
+          maxLength: 72
+          minLength: 8
+        password_confirmation:
+          type: string
+          format: password
+          writeOnly: true
+      type: object
+    LoginRequest:
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          writeOnly: true
+      type: object
+    ErrorResponse:
+      required:
+        - message
+        - code
+      properties:
+        message:
+          type: string
+          example: 'Authentication is required or the token is invalid.'
+        code:
+          type: string
+          example: UNAUTHENTICATED
+      type: object
+    ValidationErrorResponse:
+      allOf:
+        -
+          $ref: '#/components/schemas/ErrorResponse'
+        -
+          required:
+            - errors
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+          type: object
+    PaginationLinks:
+      properties:
+        first:
+          type: string
+          nullable: true
+        last:
+          type: string
+          nullable: true
+        prev:
+          type: string
+          nullable: true
+        next:
+          type: string
+          nullable: true
+      type: object
+    PaginationMeta:
+      required:
+        - current_page
+        - last_page
+        - per_page
+        - total
+      properties:
+        current_page:
+          type: integer
+          example: 1
+        last_page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 15
+        total:
+          type: integer
+          example: 1
+      type: object
+  responses:
+    Unauthenticated:
+      description: 'Authentication is missing or the token is invalid or expired.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            Unauthenticated:
+              value:
+                message: 'Authentication is required or the token is invalid.'
+                code: UNAUTHENTICATED
+    Forbidden:
+      description: 'The authenticated user is not allowed to perform this action.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            Forbidden:
+              value:
+                message: 'You are not allowed to perform this action.'
+                code: FORBIDDEN
+    NotFound:
+      description: 'The resource does not exist or is not visible to this user.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            NotFound:
+              value:
+                message: 'The requested resource was not found.'
+                code: NOT_FOUND
+    Conflict:
+      description: 'The request conflicts with the resource state.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            Conflict:
+              value:
+                message: 'The request conflicts with the current resource state.'
+                code: CONFLICT
+    ValidationError:
+      description: 'Invalid input.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorResponse'
+          examples:
+            ValidationError:
+              value:
+                message: 'The given data was invalid.'
+                code: VALIDATION_ERROR
+                errors:
+                  email:
+                    - 'The email field is required.'
+    TooManyRequests:
+      description: 'Rate limit exceeded. Retry after the indicated delay.'
+      headers:
+        Retry-After:
+          description: 'Seconds before retrying.'
+          schema:
+            type: integer
+            example: 60
+        X-RateLimit-Limit:
+          description: 'Allowed requests in this window.'
+          schema:
+            type: integer
+            example: 5
+        X-RateLimit-Remaining:
+          description: 'Remaining requests.'
+          schema:
+            type: integer
+            example: 0
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            TooManyRequests:
+              value:
+                message: 'Too many requests. Please try again later.'
+                code: TOO_MANY_REQUESTS
+    ServerError:
+      description: 'Unexpected error. Internal details are never exposed.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            ServerError:
+              value:
+                message: 'An unexpected error occurred.'
+                code: SERVER_ERROR
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+    PerPage:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        default: 15
+        maximum: 100
+        minimum: 1
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: 'Client-generated key, preferably a UUID, 8–255 characters. Completed identical requests replay status/body with Idempotent-Replayed: true; in-progress requests return 409 with Retry-After: 1; mismatches return 422. Default TTL 24 hours. Validation and server errors release the key.'
+      required: true
+      schema:
+        type: string
+        maxLength: 255
+        minLength: 8
+  securitySchemes:
+    bearerAuth:
+      type: http
+      bearerFormat: JWT
+      scheme: bearer
+tags:
+  -
+    name: Authentication
+    description: 'Register, log in, inspect the current user, and invalidate tokens.'
+  -
+    name: Documentation
+    description: 'Interactive API reference, enabled outside production by default.'

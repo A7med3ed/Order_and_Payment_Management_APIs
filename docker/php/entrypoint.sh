@@ -10,10 +10,11 @@ mkdir -p storage/framework/cache/data storage/framework/sessions \
 
 composer install --no-interaction --prefer-dist
 
-php scripts/ensure-app-key.php
+php scripts/ensure-secrets.php
 
 php artisan config:clear
 php artisan migrate --force --no-interaction
+php artisan l5-swagger:generate
 
 chown -R www-data:www-data storage bootstrap/cache
 chmod -R ug+rwX storage bootstrap/cache

@@ -34,3 +34,4 @@ ledger-verify:
 
 docs:
 	$(APP_EXEC) php artisan l5-swagger:generate
+	$(APP_EXEC) php scripts/export-openapi.php
