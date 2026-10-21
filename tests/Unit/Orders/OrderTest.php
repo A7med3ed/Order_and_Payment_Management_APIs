@@ -100,6 +100,16 @@ final class OrderTest extends TestCase
         $this->assertSame(OrderStatus::Cancelled, $order->status);
     }
 
+    public function test_pending_payments_prevent_cancellation_during_the_gateway_call(): void
+    {
+        $order = $this->order();
+        $order->id = 5;
+        $order->exists = true;
+        $order->confirm();
+        $this->expectException(OrderHasPaymentsException::class);
+        $order->cancel(new PaymentGuard(true, false, true));
+    }
+
     public function test_any_payment_blocks_deletion(): void
     {
         $order = $this->order();

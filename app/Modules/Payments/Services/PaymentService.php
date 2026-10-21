@@ -58,7 +58,7 @@ final readonly class PaymentService
             ->when($data->orderId, fn (Builder $query) => $query->where('order_id', $data->orderId))
             ->when($data->status, fn (Builder $query) => $query->where('status', $data->status))
             ->when($data->method !== null, fn (Builder $query) => $query->where('method', $data->method))
-            ->latest('id')->paginate($data->pagination->perPage, ['*'], 'page', $data->pagination->page)
+            ->latest('id')->paginate($data->pagination->perPage, ['*'], 'page', $data->pagination->page)->withQueryString()
             ->through(fn (Payment $payment): PaymentData => PaymentData::fromModel($payment));
     }
 

@@ -86,8 +86,8 @@ final class Payment extends Model
 
     public function markSuccessful(GatewayChargeResult $result): void
     {
-        if (! $result->successful) {
-            throw new InvalidArgumentException('A successful gateway result is required.');
+        if (! $result->successful || $result->transactionId === null || $result->transactionId === '' || strlen($result->transactionId) > 255) {
+            throw new InvalidArgumentException('A successful gateway result with a transaction reference of at most 255 bytes is required.');
         }
         $this->transitionTo(PaymentStatus::Successful);
         $this->transaction_id = $result->transactionId;
@@ -98,6 +98,9 @@ final class Payment extends Model
 
     public function markFailed(string $code, string $message, array $response = []): void
     {
+        if (preg_match('/^[A-Z][A-Z0-9_]{0,63}$/D', $code) !== 1) {
+            throw new InvalidArgumentException('Invalid gateway failure code.');
+        }
         $result = GatewayChargeResult::failure($code, $message, $response);
         $this->transitionTo(PaymentStatus::Failed);
         $this->transaction_id = null;

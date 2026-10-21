@@ -937,31 +937,33 @@ Recovery note: if the process dies between TX 1 and TX 2, the payment stays `pen
 
 **Goal:** confidence in correctness, plus a quality pass.
 
-- [ ] **Unit tests**
-  - [ ] each gateway: success, decline, provider error → `GatewayException`; sanitization (no card number/CVV in results)
-  - [ ] `PaymentGatewayManager`: resolves, unknown method throws, disabled gateway not supported, `extend()` works
-  - [ ] `PaymentService` with a mocked gateway and mocked ledger: state changes and ledger calls in the right order
-  - [ ] order total calculation, `OrderStatus::canTransitionTo`, `Money`
-  - [ ] **domain model:** every `Order` behavior (`place`, `confirm`, `cancel`, `replaceItems`, `assertDeletable`) and each invariant, in memory without a DB; `Payment` transitions (terminal states cannot change); `status` and `total_amount` are not mass assignable
-  - [ ] ledger hasher determinism
-- [ ] **Feature tests (payments)**
-  - [ ] success path (payment `successful` + ledger `payment_initiated` + `payment_succeeded`, hash chain valid)
-  - [ ] failed path (declined card → payment `failed` + ledger `payment_failed`)
-  - [ ] gateway exception path → payment `failed`, API still returns a clean response
-  - [ ] order not confirmed → 409, no payment, no ledger entry
-  - [ ] already paid → 409; retry after failure with a new key → allowed
-  - [ ] unsupported method → 422; invalid `payment_details` → 422 with per-field messages
-  - [ ] **idempotency:** same key twice → one payment, one gateway call (assert with a spy), identical response, replay header; different payload with same key → 422; missing key → 422
-  - [ ] ownership: other user's order/payment → 403/404
-  - [ ] listing by order and globally, filters, pagination
-  - [ ] delete order with payments → 409
-- [ ] **Rate limiting tests:** login is limited after the configured attempts (429 + `Retry-After` + standard error body); limits are per user (user B unaffected by user A); payments limiter per user and per user + order; counters reset after the window (use Carbon test time travel); limits are read from config.
-- [ ] **OpenAPI gate test** (section 8.1): spec is valid, every `api/*` route is documented, every operation has a tag, a summary, a 2xx and a 4xx response, and protected routes declare `bearerAuth`.
-- [ ] **Extensibility test:** register a fake gateway through `PaymentGatewayManager::extend()` (or a test config entry) and process a payment through the real HTTP endpoint without touching production code.
-- [ ] Review all Form Requests (rules and messages), error format consistency across modules, N+1 queries (eager loading), indexes, `ledger:verify` after the full suite.
-- [ ] Run Pint, fix violations. Run static analysis if Larastan is already installed.
+- [x] **Unit tests**
+  - [x] each gateway: success, decline, provider error → `GatewayException`; sanitization (no card number/CVV in results)
+  - [x] `PaymentGatewayManager`: resolves, unknown method throws, disabled gateway not supported, `extend()` works
+  - [x] `PaymentService` with a mocked gateway and mocked ledger: state changes and ledger calls in the right order
+  - [x] order total calculation, `OrderStatus::canTransitionTo`, `Money`
+  - [x] **domain model:** every `Order` behavior (`place`, `confirm`, `cancel`, `replaceItems`, `assertDeletable`) and each invariant, in memory without a DB; `Payment` transitions (terminal states cannot change); `status` and `total_amount` are not mass assignable
+  - [x] ledger hasher determinism
+- [x] **Feature tests (payments)**
+  - [x] success path (payment `successful` + ledger `payment_initiated` + `payment_succeeded`, hash chain valid)
+  - [x] failed path (declined card → payment `failed` + ledger `payment_failed`)
+  - [x] gateway exception path → payment `failed`, API still returns a clean response
+  - [x] order not confirmed → 409, no payment, no ledger entry
+  - [x] already paid → 409; retry after failure with a new key → allowed
+  - [x] unsupported method → 422; invalid `payment_details` → 422 with per-field messages
+  - [x] **idempotency:** same key twice → one payment, one gateway call (assert with a spy), identical response, replay header; different payload with same key → 422; missing key → 422
+  - [x] ownership: other user's order/payment → 403/404
+  - [x] listing by order and globally, filters, pagination
+  - [x] delete order with payments → 409
+- [x] **Rate limiting tests:** login is limited after the configured attempts (429 + `Retry-After` + standard error body); limits are per user (user B unaffected by user A); payments limiter per user and per user + order; counters reset after the window (use Carbon test time travel); limits are read from config.
+- [x] **OpenAPI gate test** (section 8.1): spec is valid, every `api/*` route is documented, every operation has a tag, a summary, a 2xx and a 4xx response, and protected routes declare `bearerAuth`.
+- [x] **Extensibility test:** register a fake gateway through `PaymentGatewayManager::extend()` (or a test config entry) and process a payment through the real HTTP endpoint without touching production code.
+- [x] Review all Form Requests (rules and messages), error format consistency across modules, N+1 queries (eager loading), indexes, `ledger:verify` after the full suite.
+- [x] Run Pint, fix violations. Run static analysis if Larastan is already installed.
 
 **DoD:** `make test` is green; Pint is clean; payment logic is covered by unit and feature tests.
+
+**Sprint 5 verification (2026-10-21):** Complete. 145 passing tests, 783 assertions; Pint clean across 203 PHP files. Includes database-free aggregate/gateway tests, mocked service boundaries on real transactions, rollback/after-commit checks, concurrent HTTP attempts, third-gateway HTTP registration, cache-expiry safety, per-user/per-order throttle windows, ownership, sanitized errors, pagination/N+1 checks, and a valid OpenAPI gate covering all 18 API operations. Composer/platform checks, migration, live Swagger/spec, and ledger verification pass. Larastan is not installed. Stop before Sprint 6.
 
 ---
 

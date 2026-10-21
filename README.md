@@ -1,7 +1,7 @@
 # Order and Payment Management APIs
 
 An API-only Laravel 13 project using PHP 8.3 and MySQL 8.4. Node.js and npm are not required.
-Sprints 0–4 provide Docker, modular infrastructure, JWT authentication, rate limits,
+Sprints 0–5 provide Docker, modular infrastructure, JWT authentication, rate limits,
 order management, immutable ledger history, idempotent payments, simulated credit-card
 and PayPal gateways, Swagger, and the accompanying test suite.
 See [PROJECT_PLAN.md](PROJECT_PLAN.md)
@@ -289,3 +289,11 @@ a `payment.gateways` configuration entry, and environment credentials; no change
 to PaymentService or the HTTP layer are needed. Tests cover both runtime `extend()`
 registration and configuration registration through the real HTTP endpoint.
 The full gateway tutorial and Postman delivery remain Sprint 6.
+
+The combined suite currently passes 145 tests with 783 assertions. It covers
+aggregate behavior without a database, HTTP flows, both throttle windows, cache
+expiry and permanent payment identity, real concurrent HTTP requests on MySQL,
+transaction rollback and after-commit events, third-gateway extensibility, and
+OpenAPI coverage/security/rate limits for every API operation. Payment pagination
+preserves filters, and query-count tests guard against per-row database queries.
+Pint passes all 203 first-party PHP files. Larastan is not installed.

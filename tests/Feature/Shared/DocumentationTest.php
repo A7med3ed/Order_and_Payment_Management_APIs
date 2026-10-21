@@ -9,6 +9,40 @@ use Tests\TestCase;
 
 final class DocumentationTest extends TestCase
 {
+    public function test_every_api_operation_is_valid_documented_rate_limited_and_secured(): void
+    {
+        $openApi = (new \OpenApi\Generator())->setVersion('3.0.0')->generate([app_path('Modules')]);
+        $this->assertNotNull($openApi);
+        $this->assertTrue($openApi->validate());
+        $spec = json_decode($openApi->toJson(), true, flags: JSON_THROW_ON_ERROR);
+        $seen = 0;
+        foreach (\Illuminate\Support\Facades\Route::getRoutes() as $route) {
+            if (! str_starts_with($route->uri(), 'api/')) {
+                continue;
+            }
+            $middleware = $route->gatherMiddleware();
+            $this->assertNotEmpty(array_filter($middleware, fn (string $name): bool => str_starts_with($name, 'throttle:')), $route->uri().' has no rate limiter.');
+            foreach (array_diff($route->methods(), ['HEAD']) as $method) {
+                $operation = $spec['paths']['/'.$route->uri()][strtolower($method)] ?? null;
+                $this->assertNotNull($operation, $method.' '.$route->uri().' is undocumented.');
+                $this->assertNotEmpty($operation['tags'] ?? [], $route->uri());
+                $this->assertNotEmpty($operation['summary'] ?? '', $route->uri());
+                $statuses = array_map('strval', array_keys($operation['responses']));
+                $this->assertNotEmpty(array_filter($statuses, fn (string $status): bool => str_starts_with($status, '2')));
+                $this->assertNotEmpty(array_filter($statuses, fn (string $status): bool => str_starts_with($status, '4')));
+                if (in_array('auth:api', $middleware, true)) {
+                    $this->assertContains(['bearerAuth' => []], $operation['security'] ?? []);
+                }
+                $seen++;
+            }
+        }
+        $this->assertGreaterThanOrEqual(18, $seen);
+        $post = $spec['paths']['/api/orders/{order}/payments']['post'];
+        $this->assertContains('#/components/parameters/IdempotencyKey', array_column($post['parameters'], '$ref'));
+        $this->assertArrayHasKey('FailedPayment', $post['responses']['201']['content']['application/json']['examples']);
+        $this->assertArrayHasKey('IdempotentReplay', $post['responses']['201']['content']['application/json']['examples']);
+    }
+
     public function test_swagger_ui_and_generated_spec_are_available(): void
     {
         $this->artisan('l5-swagger:generate')->assertSuccessful();
