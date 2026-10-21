@@ -1,5 +1,7 @@
 # Implementation Guide: Extendable Order & Payment Management API
 
+**Delivery status (2026-10-21):** Sprints 0–6 and the final acceptance audit are complete for release `v1.0.0`. See README.md for usage, docs/DECISIONS.md for verification evidence, and docs/ROADMAP.md for enhancements beyond this simulated-payment release.
+
 > **Audience:** an AI coding agent working inside the IDE on an **already existing Laravel project**.
 > **Your job:** build everything described here, sprint by sprint, without recreating the Laravel project.
 
@@ -971,46 +973,50 @@ Recovery note: if the process dies between TX 1 and TX 2, the payment stays `pen
 
 **Goal:** a reviewer can run and understand the project in minutes.
 
-- [ ] **Swagger / OpenAPI** (section 8.1): run `make docs`, verify Swagger UI at `/api/documentation`, commit `docs/openapi/openapi.json` and `openapi.yaml`. Confirm every endpoint has request examples, success examples, and error examples, grouped by the tags `Authentication`, `Orders`, `Payments`, `Ledger`.
-- [ ] **Postman collection** (`docs/postman/`), generated from the OpenAPI file (import it, or use `openapi-to-postmanv2`) and then enriched. Folders: `Authentication`, `Orders`, `Payments` (include ledger requests under Payments or a `Ledger` sub-folder).
-  - [ ] Collection variables: `base_url`, `token`, `order_id`, `payment_id`; the login request has a test script that saves the token; order creation saves `order_id`.
-  - [ ] Payment requests send `Idempotency-Key: {{$guid}}` (and one request showing a replay with a fixed key).
-  - [ ] Saved examples per request: success **and** errors (401, 403, 404, 409, 422, 429).
-  - [ ] Examples specific to this design: payment success, card declined (`...0002`), order not confirmed, already paid, idempotent replay, key reused with a different body, missing key, invalid order status transition, rate limit exceeded (429).
-  - [ ] Export the collection (and an environment file) as JSON into the repo.
-- [ ] **README.md**
-  - [ ] Overview, tech stack, features
-  - [ ] Setup: `cp .env.example .env`, `docker compose up -d`, `make migrate`, `make seed`, JWT secret, running tests, running Pint
-  - [ ] Architecture: module structure, dependency rules, DTO conventions, diagram of the payment flow
-  - [ ] Endpoint summary table
-  - [ ] **"How to add a new payment gateway"**: step-by-step with a full example class, config entry, env vars, and a test (the 3-step procedure from section 4.7)
-  - [ ] **Idempotency**: header usage, behavior table, TTL
-  - [ ] **Ledger**: what is recorded, immutability layers, `ledger:verify`, production DB-grant recommendation
-  - [ ] **Rate limiting**: limiter table, env variables, 429 response format, middleware order on payments
-  - [ ] **Domain model (DDD)**: aggregates, invariants, and the state machines for orders and payments
-  - [ ] **API documentation**: where Swagger UI lives, how to regenerate (`make docs`), where the exported OpenAPI and Postman files are
-  - [ ] Assumptions and notes (simulated gateways, how orders get confirmed, status transitions, money handling, ownership behavior, 201 on failed payments, known limitation of the pending-payment recovery)
-- [ ] Final review: fresh-clone test (clone → `docker compose up` → migrate → tests → import Postman and run), clean commit history, tag a release.
+- [x] **Swagger / OpenAPI** (section 8.1): run `make docs`, verify Swagger UI at `/api/documentation`, commit `docs/openapi/openapi.json` and `openapi.yaml`. Confirm every endpoint has request examples, success examples, and error examples, grouped by the tags `Authentication`, `Orders`, `Payments`, `Ledger`.
+- [x] **Postman collection** (`docs/postman/`), generated from the OpenAPI file (import it, or use `openapi-to-postmanv2`) and then enriched. Folders: `Authentication`, `Orders`, `Payments` (include ledger requests under Payments or a `Ledger` sub-folder).
+  - [x] Collection variables: `base_url`, `token`, `order_id`, `payment_id`; the login request has a test script that saves the token; order creation saves `order_id`.
+  - [x] Payment requests send `Idempotency-Key: {{$guid}}` (and one request showing a replay with a fixed key).
+  - [x] Saved examples per request: success **and** errors (401, 403, 404, 409, 422, 429).
+  - [x] Examples specific to this design: payment success, card declined (`...0002`), order not confirmed, already paid, idempotent replay, key reused with a different body, missing key, invalid order status transition, rate limit exceeded (429).
+  - [x] Export the collection (and an environment file) as JSON into the repo.
+- [x] **README.md**
+  - [x] Overview, tech stack, features
+  - [x] Setup: `cp .env.example .env`, `docker compose up -d`, `make migrate`, `make seed`, JWT secret, running tests, running Pint
+  - [x] Architecture: module structure, dependency rules, DTO conventions, diagram of the payment flow
+  - [x] Endpoint summary table
+  - [x] **"How to add a new payment gateway"**: step-by-step with a full example class, config entry, env vars, and a test (the 3-step procedure from section 4.7)
+  - [x] **Idempotency**: header usage, behavior table, TTL
+  - [x] **Ledger**: what is recorded, immutability layers, `ledger:verify`, production DB-grant recommendation
+  - [x] **Rate limiting**: limiter table, env variables, 429 response format, middleware order on payments
+  - [x] **Domain model (DDD)**: aggregates, invariants, and the state machines for orders and payments
+  - [x] **API documentation**: where Swagger UI lives, how to regenerate (`make docs`), where the exported OpenAPI and Postman files are
+  - [x] Assumptions and notes (simulated gateways, how orders get confirmed, status transitions, money handling, ownership behavior, 201 on failed payments, known limitation of the pending-payment recovery)
+- [x] Final review: fresh-clone test (clone → `docker compose up` → migrate → tests → import Postman and run), clean commit history, tag a release.
 
 **DoD:** following only the README, a fresh clone runs end to end; the Postman collection imports and works against the Docker setup; the OpenAPI file imports into Swagger Editor and Postman without errors.
+
+**Sprint 6 verification (2026-10-21):** Complete. A separate fresh Git clone with new Docker dependency/database volumes built and started successfully on PHP 8.3.35. Migration, repeated seeding, documentation generation, Composer/platform checks and Pint (202 PHP files) passed. Both the working project and fresh clone passed 146 tests with 1,024 assertions. The generated collection contains 35 requests and 291 saved responses; Newman imported and executed 37 HTTP requests (including two rate-limit retries) with 52 assertions and zero failures. The populated release ledger verified all 8 entries. All 18 API operations have documentation, examples and rate limits; 116 canonical request/response examples validate against their declared schemas. OpenAPI and Postman exports pass their official JSON schemas and regeneration leaves the clone clean.
+
+**Verification limitation:** no interactive browser surface is available in this environment, so a visual Swagger Editor import was not performed. Official-schema validation, live Swagger/spec HTTP 200 checks and a real Postman SDK/Newman import/run provide the available compatibility checks; see docs/DECISIONS.md. Simulated gateways and manual pending-payment reconciliation remain documented scope boundaries, with improvements prioritized in docs/ROADMAP.md.
 
 ---
 
 ## 11. Final Acceptance Checklist
 
-- [ ] All task requirements implemented (orders, payments, rules, JWT, validation, pagination)
-- [ ] Docker one-command startup works
-- [ ] Modules are self-contained; no cross-module model/service imports
-- [ ] DTOs used at every module boundary; no `Request` or raw arrays inside services
-- [ ] Payment strategy: adding a gateway = 1 class + 1 config entry + env vars (proved by a test)
-- [ ] `Idempotency-Key` enforced on payment creation; replay, conflict, and mismatch behaviors tested
-- [ ] Ledger is append-only (model guard, DB triggers, hash chain, `ledger:verify`) and tested
-- [ ] Standard JSON error format everywhere
-- [ ] Rate limiting configured and tested (auth, api, payments) with the standard 429 response
-- [ ] Orders and Payments follow DDD: aggregates enforce invariants and state changes happen only through domain methods
-- [ ] OpenAPI/Swagger complete (every route, success and error examples), exported to `docs/openapi/`, Postman collection generated from it
-- [ ] PSR-12 clean (Pint), tests green
-- [ ] Postman collection exported, README complete, `docs/DECISIONS.md` filled
+- [x] All task requirements implemented (orders, payments, rules, JWT, validation, pagination)
+- [x] Docker one-command startup works
+- [x] Modules are self-contained; no cross-module model/service imports
+- [x] DTOs used at every module boundary; no `Request` or raw arrays inside services
+- [x] Payment strategy: adding a gateway = 1 class + 1 config entry + env vars (proved by a test)
+- [x] `Idempotency-Key` enforced on payment creation; replay, conflict, and mismatch behaviors tested
+- [x] Ledger is append-only (model guard, DB triggers, hash chain, `ledger:verify`) and tested
+- [x] Standard JSON error format everywhere
+- [x] Rate limiting configured and tested (auth, api, payments) with the standard 429 response
+- [x] Orders and Payments follow DDD: aggregates enforce invariants and state changes happen only through domain methods
+- [x] OpenAPI/Swagger complete (every route, success and error examples), exported to `docs/openapi/`, Postman collection generated from it
+- [x] PSR-12 clean (Pint), tests green
+- [x] Postman collection exported, README complete, `docs/DECISIONS.md` filled
 
 ## 12. Risks and Mitigations
 

@@ -44,7 +44,7 @@ final class LedgerEndpoints
         security: [['bearerAuth' => []]],
         parameters: [new OA\Parameter(ref: '#/components/parameters/PaymentId'), new OA\Parameter(ref: '#/components/parameters/Page'), new OA\Parameter(ref: '#/components/parameters/PerPage')],
         responses: [
-            new OA\Response(response: 200, description: 'Paginated immutable payment events.', content: new OA\JsonContent(ref: '#/components/schemas/LedgerPage')),
+            new OA\Response(response: 200, description: 'Paginated immutable payment events.', content: new OA\JsonContent(ref: '#/components/schemas/LedgerPage', example: ['data' => [['id' => '01J00000000000000000000000', 'order_id' => 1, 'payment_id' => 1, 'chain_sequence' => 1, 'type' => 'payment_initiated', 'direction' => 'memo', 'amount' => '39.98', 'currency' => 'USD', 'gateway' => 'credit_card', 'transaction_id' => null, 'idempotency_key' => 'payment-example-001', 'metadata' => ['last4' => '4242'], 'previous_hash' => null, 'entry_hash' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'created_at' => '2026-10-21T00:00:00Z']], 'links' => ['first' => '/api/payments/1/ledger?page=1', 'last' => '/api/payments/1/ledger?page=1', 'prev' => null, 'next' => null], 'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 15, 'total' => 1]])),
             new OA\Response(response: 401, ref: '#/components/responses/Unauthenticated'),
             new OA\Response(response: 404, ref: '#/components/responses/NotFound'),
             new OA\Response(response: 422, ref: '#/components/responses/ValidationError'),

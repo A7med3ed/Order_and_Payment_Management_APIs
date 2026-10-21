@@ -30,4 +30,12 @@ final class DatabaseEnvironmentTest extends TestCase
     {
         $this->get('/up')->assertOk();
     }
+
+    public function test_local_seed_is_repeatable_and_uses_valid_login_credentials(): void
+    {
+        $this->seed();
+        $this->seed();
+        $this->assertSame(1, User::query()->where('email', 'test@example.com')->count());
+        $this->postJson('/api/auth/login', ['email' => 'test@example.com', 'password' => 'StrongPass123!'])->assertOk()->assertJsonStructure(['data' => ['access_token']]);
+    }
 }

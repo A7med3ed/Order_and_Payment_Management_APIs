@@ -30,6 +30,18 @@ final class DocumentationTest extends TestCase
                 $statuses = array_map('strval', array_keys($operation['responses']));
                 $this->assertNotEmpty(array_filter($statuses, fn (string $status): bool => str_starts_with($status, '2')));
                 $this->assertNotEmpty(array_filter($statuses, fn (string $status): bool => str_starts_with($status, '4')));
+                if (isset($operation['requestBody'])) {
+                    $media = $operation['requestBody']['content']['application/json'];
+                    $this->assertTrue(isset($media['example']) || ! empty($media['examples']), $route->uri().' needs a request example.');
+                }
+                foreach ($operation['responses'] as $status => $response) {
+                    if (isset($response['$ref'])) {
+                        $response = $spec['components']['responses'][basename($response['$ref'])];
+                    }
+                    foreach ($response['content'] ?? [] as $media) {
+                        $this->assertTrue(isset($media['example']) || ! empty($media['examples']) || isset($media['schema']['example']), $method.' '.$route->uri().' response '.$status.' needs an example.');
+                    }
+                }
                 if (in_array('auth:api', $middleware, true)) {
                     $this->assertContains(['bearerAuth' => []], $operation['security'] ?? []);
                 }
@@ -80,5 +92,50 @@ final class DocumentationTest extends TestCase
         $this->get('/api/documentation')->assertOk();
         $this->getJson('/documentation/spec')->assertStatus(429)
             ->assertJsonPath('code', 'TOO_MANY_REQUESTS')->assertHeader('Retry-After');
+    }
+
+    public function test_delivery_exports_match_the_api_and_postman_covers_every_operation(): void
+    {
+        $this->artisan('l5-swagger:generate')->assertSuccessful();
+        $spec = json_decode(file_get_contents(storage_path('api-docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame($spec, json_decode(file_get_contents(base_path('docs/openapi/openapi.json')), true, flags: JSON_THROW_ON_ERROR));
+        $this->assertSame($spec, Yaml::parseFile(base_path('docs/openapi/openapi.yaml')));
+        $collectionPath = base_path('docs/postman/collection.json');
+        $before = hash_file('sha256', $collectionPath);
+        $process = new \Symfony\Component\Process\Process([PHP_BINARY, base_path('scripts/export-postman.php')], base_path());
+        $process->mustRun();
+        $this->assertSame($before, hash_file('sha256', $collectionPath), 'Postman exports must be deterministic and current.');
+        $collection = json_decode(file_get_contents($collectionPath), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame('https://schema.getpostman.com/json/collection/v2.1.0/collection.json', $collection['info']['schema']);
+        $variables = array_column($collection['variable'], 'value', 'key');
+        $this->assertSame('', $variables['token']);
+        foreach (['base_url', 'token', 'order_id', 'payment_id', 'replay_key'] as $key) {
+            $this->assertArrayHasKey($key, $variables);
+        }
+        $covered = [];
+        $savedStatuses = [];
+        foreach ($collection['item'] as $folder) {
+            foreach ($folder['item'] as $item) {
+                $url = explode('?', $item['request']['url'])[0];
+                $url = str_replace('{{base_url}}', '', $url);
+                $url = preg_replace('/\{\{[a-z_]*order_id\}\}/', '{order}', $url);
+                $url = str_replace('{{payment_id}}', '{payment}', $url);
+                $covered[$item['request']['method'].' '.$url] = true;
+                $this->assertNotEmpty($item['response'], $item['name']);
+                $this->assertNotEmpty(array_filter($item['response'], fn (array $response): bool => $response['code'] >= 200 && $response['code'] < 300), $item['name']);
+                $this->assertNotEmpty(array_filter($item['response'], fn (array $response): bool => $response['code'] >= 400 && $response['code'] < 500), $item['name']);
+                foreach ($item['response'] as $response) {
+                    $savedStatuses[$response['code']] = true;
+                }
+            }
+        }
+        foreach ($spec['paths'] as $path => $methods) {
+            foreach ($methods as $method => $operation) {
+                $this->assertArrayHasKey(strtoupper($method).' '.$path, $covered);
+            }
+        }
+        foreach ([401, 403, 404, 409, 422, 429] as $status) {
+            $this->assertArrayHasKey($status, $savedStatuses);
+        }
     }
 }

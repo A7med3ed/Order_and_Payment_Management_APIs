@@ -6,7 +6,7 @@ namespace App\Modules\Orders\Database\Factories;
 
 use App\Modules\Orders\DTOs\OrderItemData;
 use App\Modules\Orders\Models\Order;
-use App\Modules\Orders\Services\NullOrderPaymentGuard;
+use App\Modules\Orders\Contracts\OrderPaymentGuardInterface;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -54,6 +54,6 @@ final class OrderFactory extends Factory
     }
     public function cancelled(): static
     {
-        return $this->afterMaking(fn (Order $order) => $order->cancel(new NullOrderPaymentGuard()));
+        return $this->afterMaking(fn (Order $order) => $order->cancel(app(OrderPaymentGuardInterface::class)));
     }
 }

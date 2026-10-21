@@ -8,6 +8,8 @@ use OpenApi\Attributes as OA;
 
 final class PaymentEndpoints
 {
+    private const PAYMENT = ['id' => 1, 'order_id' => 1, 'user_id' => 1, 'status' => 'successful', 'method' => 'credit_card', 'amount' => '39.98', 'currency' => 'USD', 'transaction_id' => 'cc_example', 'failure_code' => null, 'created_at' => '2026-10-21T00:00:00Z', 'updated_at' => '2026-10-21T00:00:00Z'];
+    private const PAGE = ['data' => [self::PAYMENT], 'links' => ['first' => '/api/payments?page=1', 'last' => '/api/payments?page=1', 'prev' => null, 'next' => null], 'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 15, 'total' => 1]];
     #[OA\Post(
         path: '/api/orders/{order}/payments',
         operationId: 'processPayment',
@@ -61,7 +63,7 @@ final class PaymentEndpoints
         security: [['bearerAuth' => []]],
         description: 'Owner-scoped, newest first. Filters combine status, historical method, and order_id. No provider internals are exposed.',
         parameters: [new OA\Parameter(ref: '#/components/parameters/Page'), new OA\Parameter(ref: '#/components/parameters/PerPage'), new OA\Parameter(ref: '#/components/parameters/PaymentStatusFilter'), new OA\Parameter(ref: '#/components/parameters/PaymentMethodFilter'), new OA\Parameter(name: 'order_id', in: 'query', schema: new OA\Schema(type: 'integer', minimum: 1))],
-        responses: [new OA\Response(response: 200, description: 'Paginated payment attempts.', content: new OA\JsonContent(ref: '#/components/schemas/PaymentPage')),
+        responses: [new OA\Response(response: 200, description: 'Paginated payment attempts.', content: new OA\JsonContent(ref: '#/components/schemas/PaymentPage', example: self::PAGE)),
             new OA\Response(response: 401, ref: '#/components/responses/Unauthenticated'), new OA\Response(response: 422, ref: '#/components/responses/ValidationError'), new OA\Response(response: 429, ref: '#/components/responses/TooManyRequests')],
     )]
     public function index(): void
@@ -76,7 +78,7 @@ final class PaymentEndpoints
         security: [['bearerAuth' => []]],
         description: 'Owner-scoped, newest first, including failed attempts. Another user receives 404.',
         parameters: [new OA\Parameter(ref: '#/components/parameters/OrderId'), new OA\Parameter(ref: '#/components/parameters/Page'), new OA\Parameter(ref: '#/components/parameters/PerPage'), new OA\Parameter(ref: '#/components/parameters/PaymentStatusFilter'), new OA\Parameter(ref: '#/components/parameters/PaymentMethodFilter')],
-        responses: [new OA\Response(response: 200, description: 'Paginated payment attempts.', content: new OA\JsonContent(ref: '#/components/schemas/PaymentPage')),
+        responses: [new OA\Response(response: 200, description: 'Paginated payment attempts.', content: new OA\JsonContent(ref: '#/components/schemas/PaymentPage', example: self::PAGE)),
             new OA\Response(response: 401, ref: '#/components/responses/Unauthenticated'), new OA\Response(response: 404, ref: '#/components/responses/NotFound'), new OA\Response(response: 422, ref: '#/components/responses/ValidationError'), new OA\Response(response: 429, ref: '#/components/responses/TooManyRequests')],
     )]
     public function forOrder(): void
@@ -90,7 +92,7 @@ final class PaymentEndpoints
         tags: ['Payments'],
         security: [['bearerAuth' => []]],
         parameters: [new OA\Parameter(ref: '#/components/parameters/PaymentId')],
-        responses: [new OA\Response(response: 200, description: 'Payment details without raw provider data.', content: new OA\JsonContent(ref: '#/components/schemas/PaymentResponse')),
+        responses: [new OA\Response(response: 200, description: 'Payment details without raw provider data.', content: new OA\JsonContent(ref: '#/components/schemas/PaymentResponse', example: ['data' => self::PAYMENT])),
             new OA\Response(response: 401, ref: '#/components/responses/Unauthenticated'), new OA\Response(response: 404, ref: '#/components/responses/NotFound'), new OA\Response(response: 422, ref: '#/components/responses/ValidationError'), new OA\Response(response: 429, ref: '#/components/responses/TooManyRequests')],
     )]
     public function show(): void

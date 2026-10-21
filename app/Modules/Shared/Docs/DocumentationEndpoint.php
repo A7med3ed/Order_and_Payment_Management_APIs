@@ -16,7 +16,7 @@ final class DocumentationEndpoint
         tags: ['Documentation'],
         security: [],
         responses: [
-            new OA\Response(response: 200, description: 'Swagger UI.', content: new OA\MediaType(mediaType: 'text/html', schema: new OA\Schema(type: 'string'))),
+            new OA\Response(response: 200, description: 'Swagger UI.', content: new OA\MediaType(mediaType: 'text/html', schema: new OA\Schema(type: 'string', example: '<!doctype html><html><body>Swagger UI</body></html>'))),
             new OA\Response(response: 404, ref: '#/components/responses/NotFound'),
             new OA\Response(response: 429, ref: '#/components/responses/TooManyRequests'),
         ],

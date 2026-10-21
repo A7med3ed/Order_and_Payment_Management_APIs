@@ -1,11 +1,18 @@
 # Order and Payment Management APIs
 
 An API-only Laravel 13 project using PHP 8.3 and MySQL 8.4. Node.js and npm are not required.
-Sprints 0–5 provide Docker, modular infrastructure, JWT authentication, rate limits,
-order management, immutable ledger history, idempotent payments, simulated credit-card
-and PayPal gateways, Swagger, and the accompanying test suite.
-See [PROJECT_PLAN.md](PROJECT_PLAN.md)
-and [docs/DECISIONS.md](docs/DECISIONS.md).
+Create and confirm orders, process idempotent payments through extensible gateway
+strategies, and inspect immutable financial history. Credit-card and PayPal adapters
+are deterministic simulations; they do not move real money.
+
+| Guide | Contents |
+|---|---|
+| [Architecture](docs/ARCHITECTURE.md) | Modules, dependencies, aggregates, data model, payment flow and concurrency |
+| [Operations](docs/OPERATIONS.md) | Configuration, troubleshooting, recovery, ledger verification and deployment boundaries |
+| [Improvement roadmap](docs/ROADMAP.md) | Known limitations, priorities and acceptance criteria for enhancements |
+| [OpenAPI](docs/openapi/openapi.yaml) / [JSON](docs/openapi/openapi.json) | Complete API contract and examples |
+| [Postman collection](docs/postman/collection.json) / [environment](docs/postman/local.environment.json) | Runnable walkthrough, saved success/error examples |
+| [Decisions](docs/DECISIONS.md) / [implementation plan](PROJECT_PLAN.md) | Tradeoffs, verification evidence and completed delivery checklist |
 
 ## Docker setup
 
@@ -50,6 +57,7 @@ With GNU Make installed on the host:
 ```sh
 make up
 make migrate
+make seed
 make test
 make pint
 ```
@@ -58,9 +66,14 @@ Windows users can run the same PHP targets with Make inside the app container:
 
 ```powershell
 docker compose exec -T app make APP_EXEC= migrate
+docker compose exec -T app make APP_EXEC= seed
 docker compose exec -T app make APP_EXEC= test
 docker compose exec -T app make APP_EXEC= pint
 ```
+
+Seeding is optional and repeatable. It creates `test@example.com` with password
+`StrongPass123!` if that email does not exist; it does not reset existing accounts.
+These are public development credentials. Register a new account for normal use.
 
 `make pint` checks PSR-12 formatting and strict types. To apply formatting:
 
@@ -71,7 +84,8 @@ docker compose exec -T app php vendor/bin/pint
 Other targets: `build`, `down`, `shell`, `seed`, and `fresh`. `fresh` deletes and
 recreates application tables and seeds them; use it only when you intend to reset
 local data. `make ledger-verify` verifies ledger hashes and sequence checkpoints. `make docs` generates
-OpenAPI and exports JSON/YAML to `docs/openapi/`. On Windows:
+OpenAPI and exports JSON/YAML to `docs/openapi/`, then generates the Postman collection
+and environment in `docs/postman/`. On Windows:
 
 ```powershell
 docker compose exec -T app make APP_EXEC= docs
@@ -288,12 +302,176 @@ Gateways declare their own detail rules. Add an AbstractPaymentGateway subclass,
 a `payment.gateways` configuration entry, and environment credentials; no changes
 to PaymentService or the HTTP layer are needed. Tests cover both runtime `extend()`
 registration and configuration registration through the real HTTP endpoint.
-The full gateway tutorial and Postman delivery remain Sprint 6.
-
-The combined suite currently passes 145 tests with 783 assertions. It covers
+The suite covers
 aggregate behavior without a database, HTTP flows, both throttle windows, cache
 expiry and permanent payment identity, real concurrent HTTP requests on MySQL,
 transaction rollback and after-commit events, third-gateway extensibility, and
 OpenAPI coverage/security/rate limits for every API operation. Payment pagination
 preserves filters, and query-count tests guard against per-row database queries.
-Pint passes all 203 first-party PHP files. Larastan is not installed.
+Pint checks all first-party PHP files. Larastan is not installed. Release verification
+and exact results are recorded in [the decisions log](docs/DECISIONS.md).
+
+## Postman walkthrough
+
+Import `docs/postman/collection.json` and `docs/postman/local.environment.json` in
+Postman. Select the local environment and set its `base_url` to your port (for this
+workspace, `http://localhost:8081`). Run the **whole collection in order**. Use a
+disposable local database: the walkthrough creates a new account and sample orders
+and payments. It leaves financial history available for inspection.
+
+Authentication saves the token; order/payment requests capture ids. Logout runs in
+the final folder so earlier requests stay authenticated. Most payment requests use
+`{{$guid}}`; the success/replay pair shares `{{replay_key}}`, regenerated once per
+run and kept unchanged for that pair. Each request has saved responses derived from
+its OpenAPI operation, including applicable 401/403/404/409/422/429 examples.
+
+The runner respects `Retry-After`, waits, and retries a throttled request up to three
+times. With default payment limits a full run may take several minutes; allow a
+90-second script timeout. For independent requests, run registration/login first,
+then set ids to resources you own. A 403 example documents authorization failures;
+owner-scoped lookups intentionally return 404 for another user's resource.
+
+Run the same collection without installing Node/npm on the host, following the
+[official Newman Docker workflow](https://learning.postman.com/docs/reference/newman-cli/newman-with-docker/):
+
+```powershell
+docker run --rm --mount "type=bind,source=$($PWD.Path)/docs/postman,target=/etc/newman,readonly" postman/newman:alpine run collection.json -e local.environment.json --env-var base_url=http://host.docker.internal:8081 --timeout-script 90000 --delay-request 200
+```
+
+Docker Desktop supplies `host.docker.internal`; on Linux add
+`--add-host=host.docker.internal:host-gateway`. Alternatively attach Newman to the
+Compose network and use `http://nginx` as `base_url`. The runner is optional tooling;
+the application and document generator use PHP only. No secrets/tokens are exported.
+
+Swagger UI is interactive at `/api/documentation`. Import either exported OpenAPI
+file into Swagger Editor or Postman to explore the contract. The enriched collection
+contains the walkthrough and scripts that a plain OpenAPI import does not include.
+Regenerate all exports with `make docs` after changing API attributes.
+
+## How to add a payment gateway
+
+Exactly three production changes are needed. The example below is another
+**simulator**; a real adapter must map provider outcomes and handle unknown outcomes
+through the recovery design in [the roadmap](docs/ROADMAP.md).
+
+1. Add `app/Modules/Payments/Gateways/Implementations/BankTransferGateway.php`:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Modules\Payments\Gateways\Implementations;
+
+use App\Modules\Payments\Gateways\Abstract\AbstractPaymentGateway;
+use App\Modules\Payments\Gateways\DTOs\GatewayChargeRequest;
+use App\Modules\Payments\Gateways\DTOs\GatewayChargeResult;
+
+final class BankTransferGateway extends AbstractPaymentGateway
+{
+    public function method(): string
+    {
+        return 'bank_transfer';
+    }
+
+    public function rules(): array
+    {
+        return ['reference' => ['required', 'string', 'max:100']];
+    }
+
+    protected function performCharge(GatewayChargeRequest $request): GatewayChargeResult
+    {
+        return GatewayChargeResult::success('bank_'.$request->reference());
+    }
+}
+```
+
+2. Add its entry to `app/Modules/Payments/Config/payment.php` under `gateways`:
+
+```php
+'bank_transfer' => [
+    'driver' => \App\Modules\Payments\Gateways\Implementations\BankTransferGateway::class,
+    'enabled' => env('PAYMENT_BANK_TRANSFER_ENABLED', false),
+    'credentials' => ['api_key' => env('BANK_TRANSFER_API_KEY')],
+],
+```
+
+3. Add these variables to `.env.example` and your ignored `.env`:
+
+```dotenv
+PAYMENT_BANK_TRANSFER_ENABLED=true
+BANK_TRANSFER_API_KEY=
+```
+
+The simulator does not need credentials. A real driver can read injected
+`$this->config->credentials` and `$this->config->options`; never return/log secrets
+or unredacted provider messages. Drivers return a failed result for a decline.
+AbstractPaymentGateway normalizes thrown provider errors to GatewayException.
+Rules are relative to `payment_details`, so the existing Form Request prefixes
+them dynamically. Payment method storage is a string, with no fixed method enum.
+No controller, service, resource, manager, or migration changes are required.
+
+Add a feature test to prove the configuration works through the existing endpoint:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature\Payments;
+
+use App\Modules\Auth\Models\User;
+use App\Modules\Orders\Models\Order;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+final class BankTransferGatewayTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_bank_transfer_uses_the_existing_payment_flow(): void
+    {
+        config(['payment.gateways.bank_transfer.enabled' => true]);
+        $user = User::factory()->create();
+        $order = Order::factory()->confirmed()->create(['user_id' => $user->id]);
+        $token = $this->app['auth']->guard('api')->login($user);
+        $this->resetAuthentication();
+
+        $this->withToken($token)->postJson('/api/orders/'.$order->id.'/payments', [
+            'method' => 'bank_transfer',
+            'payment_details' => ['reference' => 'bank-example-001'],
+        ], ['Idempotency-Key' => 'bank-payment-001'])
+            ->assertCreated()->assertJsonPath('data.status', 'successful')
+            ->assertJsonPath('data.method', 'bank_transfer');
+
+        $this->assertDatabaseCount('payments', 1);
+        $this->assertDatabaseCount('ledger_entries', 2);
+    }
+}
+```
+
+Run the tests, Pint, and `make docs`. Also document the new method's request example
+under Payments/Docs: dynamic validation works without documentation edits, but the
+published API contract should show the new method. Existing ExampleGateway tests
+prove both `extend()` and configuration registration without production changes.
+
+## Rate limits and error contract
+
+| Limiter | Scope | Default/minute | Environment variable |
+|---|---|---|---|
+| auth-login | Normalized email + IP | 5 | `RATE_LIMIT_LOGIN_PER_MINUTE` |
+| auth-register | IP | 10 | `RATE_LIMIT_REGISTER_PER_MINUTE` |
+| api | Authenticated user | 60 | `RATE_LIMIT_API_PER_MINUTE` |
+| payments | User, across orders | 10 | `RATE_LIMIT_PAYMENTS_PER_MINUTE` |
+| payments | User + order | 3 | `RATE_LIMIT_PAYMENTS_PER_ORDER_PER_MINUTE` |
+| documentation | IP, shared by UI/spec/assets | 60 | `RATE_LIMIT_DOCUMENTATION_PER_MINUTE` |
+
+```json
+{"message":"Too many requests. Please try again later.","code":"TOO_MANY_REQUESTS"}
+```
+
+429 includes `Retry-After`, `X-RateLimit-Limit`, and `X-RateLimit-Remaining`.
+Other errors use the same `message`/`code` envelope; 422 validation errors also have
+an `errors` map. Missing/expired JWT is 401, unavailable resource is 404, invalid
+method is 405, state conflicts are 409, bad input is 422, and unexpected errors
+are sanitized 500 responses. See OpenAPI for endpoint-specific codes and examples.

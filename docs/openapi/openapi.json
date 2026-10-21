@@ -3,7 +3,7 @@
     "info": {
         "title": "Order and Payment Management API",
         "description": "Authenticate with a JWT bearer token. API errors use message/code and validation errors include errors. Limits are configurable; 429 includes Retry-After. Payment creation requires Idempotency-Key; replays count toward rate limits. Gateways are deterministic simulations.",
-        "version": "0.5.0"
+        "version": "1.0.0"
     },
     "servers": [
         {
@@ -325,6 +325,41 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/LedgerPage"
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "id": "01J00000000000000000000000",
+                                            "order_id": 1,
+                                            "payment_id": 1,
+                                            "chain_sequence": 1,
+                                            "type": "payment_initiated",
+                                            "direction": "memo",
+                                            "amount": "39.98",
+                                            "currency": "USD",
+                                            "gateway": "credit_card",
+                                            "transaction_id": null,
+                                            "idempotency_key": "payment-example-001",
+                                            "metadata": {
+                                                "last4": "4242"
+                                            },
+                                            "previous_hash": null,
+                                            "entry_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                            "created_at": "2026-10-21T00:00:00Z"
+                                        }
+                                    ],
+                                    "links": {
+                                        "first": "/api/payments/1/ledger?page=1",
+                                        "last": "/api/payments/1/ledger?page=1",
+                                        "prev": null,
+                                        "next": null
+                                    },
+                                    "meta": {
+                                        "current_page": 1,
+                                        "last_page": 1,
+                                        "per_page": 15,
+                                        "total": 1
+                                    }
                                 }
                             }
                         }
@@ -1093,6 +1128,35 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/PaymentPage"
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "id": 1,
+                                            "order_id": 1,
+                                            "user_id": 1,
+                                            "status": "successful",
+                                            "method": "credit_card",
+                                            "amount": "39.98",
+                                            "currency": "USD",
+                                            "transaction_id": "cc_example",
+                                            "failure_code": null,
+                                            "created_at": "2026-10-21T00:00:00Z",
+                                            "updated_at": "2026-10-21T00:00:00Z"
+                                        }
+                                    ],
+                                    "links": {
+                                        "first": "/api/payments?page=1",
+                                        "last": "/api/payments?page=1",
+                                        "prev": null,
+                                        "next": null
+                                    },
+                                    "meta": {
+                                        "current_page": 1,
+                                        "last_page": 1,
+                                        "per_page": 15,
+                                        "total": 1
+                                    }
                                 }
                             }
                         }
@@ -1386,6 +1450,35 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/PaymentPage"
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "id": 1,
+                                            "order_id": 1,
+                                            "user_id": 1,
+                                            "status": "successful",
+                                            "method": "credit_card",
+                                            "amount": "39.98",
+                                            "currency": "USD",
+                                            "transaction_id": "cc_example",
+                                            "failure_code": null,
+                                            "created_at": "2026-10-21T00:00:00Z",
+                                            "updated_at": "2026-10-21T00:00:00Z"
+                                        }
+                                    ],
+                                    "links": {
+                                        "first": "/api/payments?page=1",
+                                        "last": "/api/payments?page=1",
+                                        "prev": null,
+                                        "next": null
+                                    },
+                                    "meta": {
+                                        "current_page": 1,
+                                        "last_page": 1,
+                                        "per_page": 15,
+                                        "total": 1
+                                    }
                                 }
                             }
                         }
@@ -1426,6 +1519,21 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/PaymentResponse"
+                                },
+                                "example": {
+                                    "data": {
+                                        "id": 1,
+                                        "order_id": 1,
+                                        "user_id": 1,
+                                        "status": "successful",
+                                        "method": "credit_card",
+                                        "amount": "39.98",
+                                        "currency": "USD",
+                                        "transaction_id": "cc_example",
+                                        "failure_code": null,
+                                        "created_at": "2026-10-21T00:00:00Z",
+                                        "updated_at": "2026-10-21T00:00:00Z"
+                                    }
                                 }
                             }
                         }
@@ -1464,7 +1572,8 @@
                         "content": {
                             "text/html": {
                                 "schema": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "example": "<!doctype html><html><body>Swagger UI</body></html>"
                                 }
                             }
                         }
@@ -2337,7 +2446,8 @@
                 "schema": {
                     "type": "integer",
                     "minimum": 1
-                }
+                },
+                "example": 1
             },
             "PaymentId": {
                 "name": "payment",
@@ -2346,7 +2456,8 @@
                 "schema": {
                     "type": "integer",
                     "minimum": 1
-                }
+                },
+                "example": 1
             },
             "PaymentStatusFilter": {
                 "name": "status",
@@ -2375,7 +2486,8 @@
                     "type": "integer",
                     "default": 1,
                     "minimum": 1
-                }
+                },
+                "example": 1
             },
             "PerPage": {
                 "name": "per_page",
@@ -2385,7 +2497,8 @@
                     "default": 15,
                     "maximum": 100,
                     "minimum": 1
-                }
+                },
+                "example": 15
             },
             "IdempotencyKey": {
                 "name": "Idempotency-Key",
@@ -2396,7 +2509,8 @@
                     "type": "string",
                     "maxLength": 255,
                     "minLength": 8
-                }
+                },
+                "example": "payment-request-001"
             }
         },
         "securitySchemes": {
@@ -2414,15 +2528,15 @@
         },
         {
             "name": "Orders",
-            "description": "Owner-scoped order management (introduced in Sprint 2)."
+            "description": "Owner-scoped order management and status transitions."
         },
         {
             "name": "Payments",
-            "description": "Idempotent payment attempts (introduced in Sprint 4)."
+            "description": "Idempotent payment attempts using simulated gateways."
         },
         {
             "name": "Ledger",
-            "description": "Read-only financial history (introduced in Sprint 3)."
+            "description": "Read-only, append-only financial history."
         },
         {
             "name": "Documentation",

@@ -1,0 +1,11 @@
+{
+    "name": "Order Payment local",
+    "values": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:8080",
+            "enabled": true
+        }
+    ],
+    "_postman_variable_scope": "environment"
+}
