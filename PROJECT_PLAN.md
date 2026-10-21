@@ -21,6 +21,8 @@ existing conventions, and record the decision in docs/DECISIONS.md.
 
 ## 1. Agent Working Protocol
 
+**User workflow override for Sprints 2 and 3:** implement both sprints first, then run their combined checks and tests. Only after the combined quality gates pass, make the two sprint commits and stop before Sprint 4.
+
 1. **Audit first, then build.** Before creating anything, inspect: `composer.json` (Laravel and PHP versions), `bootstrap/`, `config/`, `routes/`, `app/`, existing migrations, existing Docker files, `.env.example`, `tests/`. Never overwrite an existing file without reading it first.
 2. **Work in sprints** in the order given. Each sprint has a *Definition of Done (DoD)*. Do not start the next sprint until the DoD passes.
 3. **One commit per sprint** (Conventional Commits, e.g. `feat(orders): add order CRUD with status transitions`).
@@ -857,19 +859,21 @@ Recovery note: if the process dies between TX 1 and TX 2, the payment stays `pen
 
 **Goal:** complete order management with all business rules.
 
-- [ ] Migrations: `orders` (`id`, `user_id`, `customer_name`, `customer_email`, `status`, `total_amount` DECIMAL(12,2), timestamps; index on `status` and `user_id`), `order_items` (`id`, `order_id`, `product_name`, `quantity`, `price` DECIMAL(12,2), timestamps, cascade on delete).
-- [ ] `OrderStatus` enum with `canTransitionTo(self): bool`. Models, relationships, casts, factories (with states: `pending`, `confirmed`, `cancelled`).
-- [ ] **DDD domain model (section 7.1):** `Order` as aggregate root with `place()`, `confirm()`, `cancel()`, `replaceItems()`, `changeCustomerDetails()`, `assertDeletable()`, `canBeEdited()`, `canBePaid()`, `isOwnedBy()`. Invariants enforced inside the aggregate. `status` and `total_amount` are not mass assignable. Domain events (`OrderPlaced`, `OrderConfirmed`, `OrderCancelled`, `OrderItemsReplaced`) are recorded in the aggregate and dispatched after commit.
-- [ ] DTOs (see inventory). `StoreOrderRequest` / `UpdateOrderRequest` / `ChangeOrderStatusRequest` / index filter validation, each with `toDto()` and custom messages (items: min 1, `quantity` integer ≥ 1, `price` numeric ≥ 0 with max 2 decimals).
-- [ ] `OrderService` as a thin **application service**: `create`, `update`, `changeStatus` (maps the target status to `confirm()` / `cancel()`), `delete`, `list(OrderFilterData)`. It loads the aggregate, calls the domain method, persists in a transaction, and dispatches events after commit. No business rules in the service. The total is computed by the aggregate with `Money`.
-- [ ] Contracts: `OrderReaderInterface` (with `lockForPayment`) returning `OrderSnapshotData`; `OrderPaymentGuardInterface`. Bind a **null/default implementation** temporarily (always "no payments") until Payments provides the real one; the Payments provider overrides the binding in Sprint 4.
-- [ ] `OrderPolicy` (ownership), `OrderResource` (with items), paginated collection (`per_page` default 15, max 100).
-- [ ] Domain exceptions in `Domain/Exceptions`: `OrderHasPaymentsException` (409), `InvalidStatusTransitionException` (409), `OrderNotEditableException` (409), `EmptyOrderException` (422).
-- [ ] Feature + unit tests (CRUD, status filter, pagination, validation errors, ownership, transitions, total calculation). Include **domain unit tests without a database** for every aggregate method and invariant (valid and invalid transitions, editing a non-pending order, cancel blocked by a successful payment via a fake guard, recorded events, `status`/`total_amount` not mass assignable).
-- [ ] Apply the `api` rate limiter to the Orders routes.
-- [ ] Document all Orders endpoints in `Orders/Docs` (tag `Orders`): create and update examples, status change examples (`confirmed`, `cancelled`), and error examples (401, 403, 404, 409 `INVALID_STATUS_TRANSITION` / `ORDER_HAS_PAYMENTS` / `ORDER_NOT_EDITABLE`, 422, 429).
+- [x] Migrations: `orders` (`id`, `user_id`, `customer_name`, `customer_email`, `status`, `total_amount` DECIMAL(12,2), timestamps; index on `status` and `user_id`), `order_items` (`id`, `order_id`, `product_name`, `quantity`, `price` DECIMAL(12,2), timestamps, cascade on delete).
+- [x] `OrderStatus` enum with `canTransitionTo(self): bool`. Models, relationships, casts, factories (with states: `pending`, `confirmed`, `cancelled`).
+- [x] **DDD domain model (section 7.1):** `Order` as aggregate root with `place()`, `confirm()`, `cancel()`, `replaceItems()`, `changeCustomerDetails()`, `assertDeletable()`, `canBeEdited()`, `canBePaid()`, `isOwnedBy()`. Invariants enforced inside the aggregate. `status` and `total_amount` are not mass assignable. Domain events (`OrderPlaced`, `OrderConfirmed`, `OrderCancelled`, `OrderItemsReplaced`) are recorded in the aggregate and dispatched after commit.
+- [x] DTOs (see inventory). `StoreOrderRequest` / `UpdateOrderRequest` / `ChangeOrderStatusRequest` / index filter validation, each with `toDto()` and custom messages (items: min 1, `quantity` integer ≥ 1, `price` numeric ≥ 0 with max 2 decimals).
+- [x] `OrderService` as a thin **application service**: `create`, `update`, `changeStatus` (maps the target status to `confirm()` / `cancel()`), `delete`, `list(OrderFilterData)`. It loads the aggregate, calls the domain method, persists in a transaction, and dispatches events after commit. No business rules in the service. The total is computed by the aggregate with `Money`.
+- [x] Contracts: `OrderReaderInterface` (with `lockForPayment`) returning `OrderSnapshotData`; `OrderPaymentGuardInterface`. Bind a **null/default implementation** temporarily (always "no payments") until Payments provides the real one; the Payments provider overrides the binding in Sprint 4.
+- [x] `OrderPolicy` (ownership), `OrderResource` (with items), paginated collection (`per_page` default 15, max 100).
+- [x] Domain exceptions in `Domain/Exceptions`: `OrderHasPaymentsException` (409), `InvalidStatusTransitionException` (409), `OrderNotEditableException` (409), `EmptyOrderException` (422).
+- [x] Feature + unit tests (CRUD, status filter, pagination, validation errors, ownership, transitions, total calculation). Include **domain unit tests without a database** for every aggregate method and invariant (valid and invalid transitions, editing a non-pending order, cancel blocked by a successful payment via a fake guard, recorded events, `status`/`total_amount` not mass assignable).
+- [x] Apply the `api` rate limiter to the Orders routes.
+- [x] Document all Orders endpoints in `Orders/Docs` (tag `Orders`): create and update examples, status change examples (`confirmed`, `cancelled`), and error examples (401, 403, 404, 409 `INVALID_STATUS_TRANSITION` / `ORDER_HAS_PAYMENTS` / `ORDER_NOT_EDITABLE`, 422, 429).
 
 **DoD:** all endpoints work with validation, pagination, and filtering; delete is blocked when the guard reports payments; users cannot access other users' orders; order state can only change through domain methods; Orders endpoints appear in Swagger UI with examples.
+
+**Sprint 2 verification (2026-10-21):** Complete after implementing both Sprints 2 and 3 as requested. Combined suite: 84 passing tests, 329 assertions; Pint: 154 passing files. Owner scoping, CRUD, totals, status transitions, guard restrictions, atomic rollback, and after-commit events are verified. Real payment integration remains Sprint 4.
 
 ---
 
